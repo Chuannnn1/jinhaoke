@@ -83,7 +83,7 @@
 │                                        │                   │
 │                                        ▼                   │
 │                              ┌─────────────────────────┐   │
-│                              │  data/jinhaoker.db      │   │
+│                              │  data/jinhaokerr.db      │   │
 │                              │  (SQLite 單一檔案)       │   │
 │                              └─────────────────────────┘   │
 │                                                             │
@@ -262,8 +262,8 @@ inventory_log（庫存異動記錄）
 
 ```bash
 # 初始化（第一次架設）
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
+sqlite3 data/jinhaokerr.db < lib/schema.sql
+sqlite3 data/jinhaokerr.db < lib/seed.sql
 ```
 
 > ⚠️ 修改 schema 前先 `DROP TABLE IF EXISTS`，再重新 `CREATE`。正式營運後要另外寫 migration script。
@@ -488,7 +488,7 @@ curl -X PATCH http://localhost:3100/api/orders/202605160001/status \
 
 ## 9. Git 協作規範
 
-> ⚠️ 正式協作 repo：`https://github.com/Chuannnn1/jinhaoke`
+> ⚠️ 正式協作 repo：`https://github.com/Chuannnn1/jinhaoker`
 > ⚠️ 請先看過以下影片了解 Git 分支與 merge 流程：
 > [【教程】Git Collaborative Development — YouTube](https://youtu.be/P-nbNgIzlYE?si=vF2JQ8Wfq0wyJHyv)
 
@@ -505,7 +505,7 @@ main           ← 正式版（只有 repo 擁有者能 merge）
 ```
 組員在 feature/xxx 開發
         ↓
-提交 PR → sullyoon review → 標註問題或通過
+提交 PR → chaeryeong review → 標註問題或通過
         ↓
 組長 merge 到 dev → 確認沒 conflict
         ↓
@@ -526,7 +526,7 @@ main           ← 正式版（只有 repo 擁有者能 merge）
 - **API 確定好格式再動手**：先討論好 request / response 格式，確認雙方都理解再分工
 - **DB schema 有變動要通知全組**：任何 SQL 改動第一時間在群組公告
 - **每天 pull 最新程式碼**：避免 merge conflict 堆積
-- **PR 審核**：所有 PR 皆由 sullyoon（agent）先行 review，再由組長 merge
+- **PR 審核**：所有 PR 皆由 chaeryeong（agent）先行 review，再由組長 merge
 
 ---
 
@@ -582,8 +582,8 @@ curl -fsSL https://tailscale.com/install.sh | sh
 
 # 4. 初始化資料庫
 mkdir -p data
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
+sqlite3 data/jinhaokerr.db < lib/schema.sql
+sqlite3 data/jinhaokerr.db < lib/seed.sql
 
 # 5. 啟動 Tailscale（需要手動登入一次）
 tailscale up
