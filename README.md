@@ -84,7 +84,7 @@
 │                                        │                   │
 │                                        ▼                   │
 │                              ┌─────────────────────────┐   │
-│                              │  data/jinhaokerr.db      │   │
+│                              │  data/jinhaoker.db      │   │
 │                              │  (SQLite 單一檔案)       │   │
 │                              └─────────────────────────┘   │
 │                                                             │
@@ -224,7 +224,7 @@ jinhaoker-pos/
 
 ## 5. 資料庫設計
 
-### 5.1 Schema 概覽（9 張表）
+### 5.1 Schema 概覽（11 張表）
 
 ```
 supplier ─────┐
@@ -235,7 +235,15 @@ ingredient ───┐
 order_item ◄─┘
               │
               ▼
-"order" ──► purchase_order ──► purchase_order_item
+"order" ────────────► delivery_customer（外送顧客地址）
+      │                      ▲
+      │                      │
+      └──► return_order ◄────┘
+                    │
+                    ▼
+             return_order_item
+
+purchase_order ──► purchase_order_item
 
 inventory_log（庫存異動記錄）
 ```
@@ -255,21 +263,54 @@ inventory_log（庫存異動記錄）
 |-------|---------|
 | `menu_item` | `is_active`（軟刪除）、`sort_order`（排序） |
 | `ingredient` | `stock_qty`（目前庫存）、`low_stock_threshold`（低庫存警示線） |
-| `"order"` | `status`（pending/cooking/delivering/completed/cancelled）、`order_id`（文字序號） |
+| `"order"` | `status`（pending/cooking/delivering/completed/cancelled）、`order_id`（文字序號）；含 `customer_phone` FK 至 `delivery_customer` |
+| `delivery_customer` | 外送顧客的姓名、電話、地址（解決 3NF 遞移相依） |
 | `recipe` | 餐點組成（item_id + ingredient_id + consume_qty） |
+| `return_order` | 退貨單，含退貨原因、退貨日期、關聯原始 purchase_order |
+| `return_order_item` | 退貨單明細（item + 數量） |
 | `inventory_log` | 每筆庫存異動的時間、原因、數量、餘量 |
 
-### 5.4 Migration 流程
+### 5.4 新增表格說明
+
+#### `delivery_customer`（外送顧客）
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `phone` | TEXT PRIMARY KEY | 電話（PK），用於關聯訂單 |
+| `name` | TEXT | 顧客姓名 |
+| `address` | TEXT | 外送地址 |
+| `created_at` | TEXT | 建立時間 |
+
+> **設計原因**：`"order"` 的地址欄位造成 3NF 遞移相依（order → phone → address），獨立成表消除冗餘。
+
+#### `return_order`（退貨單）
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `return_id` | TEXT PRIMARY KEY | 退貨單號 |
+| `purchase_order_id` | TEXT | 原始採購單（FK） |
+| `return_date` | TEXT | 退貨日期 |
+| `reason` | TEXT | 退貨原因 |
+| `note` | TEXT | 備註 |
+
+#### `return_order_item`（退貨單明細）
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `return_id` | TEXT | 隸屬退貨單（FK） |
+| `ingredient_id` | INTEGER | 原料（FK） |
+| `return_qty` | INTEGER | 退貨數量 |
+
+> **設計原因**：進貨驗收不合格時，直接建立退貨單，不修改 purchase_order_item 內容。
+
+### 5.5 Migration 流程
 
 ```bash
 # 初始化（第一次架設）
-sqlite3 data/jinhaokerr.db < lib/schema.sql
-sqlite3 data/jinhaokerr.db < lib/seed.sql
+sqlite3 data/jinhaoker.db < lib/schema.sql
+sqlite3 data/jinhaoker.db < lib/seed.sql
 ```
 
 > ⚠️ 修改 schema 前先 `DROP TABLE IF EXISTS`，再重新 `CREATE`。正式營運後要另外寫 migration script。
 
-### 5.5 SQL 語法要點
+### 5.6 SQL 語法要點
 
 ```sql
 -- 時間一律用 +8 小時（SQLite 沒有時區）
@@ -279,10 +320,11 @@ INSERT INTO menu_item (...) VALUES (...)
 -- 保留字 table 名要加雙引號
 SELECT * FROM "order" WHERE order_id = ?
 
--- Transaction 範例（建立訂單時扣庫存）
+-- Transaction 範例（外送訂單：先寫顧客、再寫訂單、最後扣庫存）
 BEGIN;
-  INSERT INTO "order" (...) VALUES (...);
-  INSERT INTO order_item (...) VALUES (...);
+  INSERT INTO delivery_customer (name, phone, address) VALUES (?, ?, ?);
+  INSERT INTO "order" (order_id, customer_name, customer_phone, status, note) VALUES (?, ?, ?, 'pending', ?);
+  INSERT INTO order_item (order_id, item_id, quantity) VALUES (?, ?, ?);
   UPDATE ingredient SET stock_qty = stock_qty - ? WHERE ingredient_id = ?;
 COMMIT;
 ```
@@ -667,8 +709,8 @@ curl -fsSL https://tailscale.com/install.sh | sh
 
 # 4. 初始化資料庫
 mkdir -p data
-sqlite3 data/jinhaokerr.db < lib/schema.sql
-sqlite3 data/jinhaokerr.db < lib/seed.sql
+sqlite3 data/jinhaoker.db < lib/schema.sql
+sqlite3 data/jinhaoker.db < lib/seed.sql
 
 # 5. 啟動 Tailscale（需要手動登入一次）
 tailscale up
