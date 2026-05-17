@@ -16,7 +16,8 @@
 7. [前端開發規範](#7-前端開發規範)
 8. [整合測試](#8-整合測試)
 9. [分工建議](#9-git-協作規範)
-10. [繳交成品規格](#10-繳交成品規格)
+10. [開始實作](#10-開始實作)
+11. [繳交成品規格](#11-繳交成品規格)
 
 ---
 
@@ -528,9 +529,93 @@ main           ← 正式版（只有 repo 擁有者能 merge）
 
 ---
 
-## 10. 繳交成品規格
+## 10. 開始實作
 
-### 10.1 必要檔案
+### 10.1 初次環境建置
+
+```bash
+# 1. Clone 協作 repo
+git clone git@github.com:Chuannnn1/jinhaoke.git
+cd jinhaoke
+
+# 2. 安裝 Node.js 20.x（如尚未安裝）
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# 3. 安裝 npm 依賴
+npm install
+
+# 4. 安裝 SQLite（Linux）
+apt-get install -y sqlite3
+
+# 5. 初始化資料庫
+mkdir -p data
+sqlite3 data/jinhaoker.db < lib/schema.sql
+sqlite3 data/jinhaoker.db < lib/seed.sql
+
+# 6. 啟動開發伺服器
+npm run dev
+# 出現  => Ready  之後，開啟 http://localhost:3100
+```
+
+### 10.2 每日開發流程
+
+```bash
+# 每次開始前：拉最新程式碼
+git checkout dev
+git pull origin dev
+
+# 建立自己的功能分支（名稱範例）
+git checkout -b feature/menu-api       # chuannnn：menu API
+git checkout -b feature/orders-api     # 組員2：orders API
+git checkout -b feature/inventory-api # 組員3：inventory API
+
+# 開發、 commit、 push
+git add .
+git commit -m "feat: add menu GET API"
+git push origin feature/menu-api
+
+# 在 GitHub 網頁發 PR → 等待 review → merge
+```
+
+### 10.3 快速測試 API（不開瀏覽器）
+
+```bash
+# 測試 Menu API
+curl http://localhost:3100/api/menu
+
+# 新增品項
+curl -X POST http://localhost:3100/api/menu \
+  -H "Content-Type: application/json" \
+  -d '{"name":"牛肉麵","category":"主食","price":120}'
+
+# 測試 Orders API
+curl -X POST http://localhost:3100/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customer_name":"王小明","customer_phone":"0912-345-678","items":[{"item_id":1,"quantity":2}]}'
+
+# 查看訂單列表
+curl http://localhost:3100/api/orders
+
+# 查看庫存
+curl http://localhost:3100/api/inventory
+```
+
+### 10.4 常見問題
+
+| 問題 | 解法 |
+|------|------|
+| `better-sqlite3` 安裝失敗 | `npm install --build-from-source better-sqlite3` |
+| 資料庫權限錯誤 | `chmod 666 data/jinhaoker.db` 或用 `sudo` 執行 init |
+| `npm run dev` 沒反應 | 確認 `.env.local` 存在（參考 `.env.example`） |
+| Port 3100 被佔用 | `lsof -ti:3100 | xargs kill -9` 然後重跑 |
+
+---
+
+
+
+
+### 11.1 必要檔案
 
 ```
 jinhaoker-pos/
@@ -547,7 +632,7 @@ jinhaoker-pos/
 └── package.json
 ```
 
-### 10.2 系統驗收標準
+### 11.2 系統驗收標準
 
 - [ ] 前台可以瀏覽菜單、加入購物車、提交訂單
 - [ ] 後台可以管理菜單（CRUD）
@@ -612,7 +697,7 @@ echo "請存取：$(tailscale funnel status | grep https)"
 | GET | `/api/orders` | 查詢訂單列表 |
 | POST | `/api/orders` | 建立訂單（Transaction） |
 | PATCH | `/api/orders/:id/status` | 更新訂單狀態 |
-| GET | `/api/orders/stats` | 儀表板統計 |
+## 11. 繳交成品規格
 | GET | `/api/inventory` | 查詢庫存 |
 | GET | `/api/inventory/check` | 低庫存警示 |
 | PUT | `/api/inventory/:id` | 更新庫存數量 |
