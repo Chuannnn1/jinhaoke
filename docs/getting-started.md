@@ -153,51 +153,19 @@ export function getDb() {
 
 ### 4.3 建立 `lib/schema.sql`
 
+> 直接 clone repo 已有完整 Schema（`lib/schema.sql`，10 張表）。若要自己手刻，請下載最新版本：
+> https://github.com/Chuannnn1/jinhaoke/blob/main/lib/schema.sql
+
+以下為精簡版（4 張核心表，僅供參考）：
+
 ```sql
--- lib/schema.sql
-
--- 1. 菜單品項
-CREATE TABLE IF NOT EXISTS menu_item (
-  item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name            TEXT    NOT NULL,
-  category        TEXT    NOT NULL,
-  price           REAL    NOT NULL,
-  description     TEXT    DEFAULT '',
-  is_active       INTEGER DEFAULT 1,
-  stock_qty       INTEGER DEFAULT 0,
-  low_stock_threshold INTEGER DEFAULT 10,
-  sort_order      INTEGER DEFAULT 0,
-  created_at      TEXT    DEFAULT (datetime('now', '+8 hours')),
-  updated_at      TEXT    DEFAULT (datetime('now', '+8 hours'))
-);
-
--- 2. 訂單
-CREATE TABLE IF NOT EXISTS orders (
-  order_id        TEXT    PRIMARY KEY,
-  customer_name   TEXT,
-  customer_phone   TEXT,
-  status          TEXT    DEFAULT 'pending',
-  note            TEXT    DEFAULT '',
-  created_at      TEXT    DEFAULT (datetime('now', '+8 hours'))
-);
-
--- 3. 訂單細項
-CREATE TABLE IF NOT EXISTS order_item (
-  order_id        TEXT,
-  item_id         INTEGER,
-  quantity        INTEGER,
-  PRIMARY KEY (order_id, item_id)
-);
-
--- 4. 庫存紀錄
-CREATE TABLE IF NOT EXISTS inventory_log (
-  log_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id         INTEGER,
-  change_qty      INTEGER,
-  reason          TEXT,
-  created_at      TEXT    DEFAULT (datetime('now', '+8 hours'))
-);
+-- lib/schema.sql（完整版見 repo）
+-- 本地建置請直接：
+-- sqlite3 data/jinhaoker.db < lib/schema.sql
+-- sqlite3 data/jinhaoker.db < lib/seed.sql
 ```
+
+> ⚠️ Schema 版本：v2（2026-05-17），共 10 張表（supplier、ingredient、menu_item、recipe、delivery_customer、"order"、order_item、purchase_order、return_order、inventory_log）
 
 ### 4.4 初始化資料庫
 
