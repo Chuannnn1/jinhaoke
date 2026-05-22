@@ -163,7 +163,7 @@ tailscale funnel status
 
 ## 4. 目錄結構
 
-```
+```text
 jinhaoker-pos/
 ├── app/
 │   ├── page.jsx                  ← 前台（顧客點餐頁）
@@ -178,72 +178,73 @@ jinhaoker-pos/
 │   │   └── inventory/page.jsx    ← 庫存管理
 │   │
 │   └── api/                      ← API 層（TypeScript）
-│       ├── health/route.js       ← 健康檢查
+│       ├── health/route.ts        ← 健康檢查
 │       ├── menu/
 │       │   ├── route.ts          ← GET list、POST 新增
 │       │   ├── [id]/route.ts      ← GET one、PUT 更新、DELETE 刪除
-│       │   └── categories/route.js ← GET 分類列表
+│       │   └── categories/route.ts ← GET 分類列表
 │       ├── orders/
-│       │   ├── route.js          ← GET list、POST 建立訂單
-│       │   ├── [id]/route.js     ← GET one、PUT 更新
-│       │   ├── [id]/status/route.js ← PATCH 更新狀態
-│       │   └── stats/route.js    ← GET 儀表板統計
+│       │   ├── route.ts          ← GET list、POST 建立訂單
+│       │   ├── [id]/route.ts     ← GET one、PUT 修改（保留編號）
+│       │   ├── [id]/complete/route.ts ← PATCH 出餐完成（★ 扣庫存）
+│       │   └── stats/route.ts    ← GET 儀表板統計
 │       ├── inventory/
-│       │   ├── route.js          ← GET list、POST 新增食材
-│       │   ├── [id]/route.js     ← GET one、PUT 更新庫存
-│       │   └── check/route.js    ← GET 低庫存警示
+│       │   ├── route.ts          ← GET list、POST 新增食材
+│       │   ├── [id]/route.ts     ← GET one、PUT 更新庫存
+│       │   └── check/route.ts    ← GET 低庫存警示
 │       ├── purchase-orders/
-│       │   ├── route.js          ← GET list、POST 建立採購單
-│       │   ├── [id]/route.js     ← GET/PUT
-│       │   └── [id]/returns/route.js ← POST 退貨
+│       │   ├── route.ts          ← GET list、POST 建立採購單
+│       │   ├── auto-restock/route.ts ← POST 一鍵補貨（選項A）
+│       │   ├── [id]/route.ts     ← GET/PUT
+│       │   └── [id]/receive/route.ts ← POST 驗貨（回填 total_amount）
 │       └── suppliers/
-│           ├── route.js          ← GET list、POST 新增
-│           └── [id]/route.js     ← GET/PUT
-│
+│           ├── route.ts          ← GET list、POST 新增
+│           └── [id]/route.ts     ← GET/PUT
+
+├── lib/
+│   ├── db.ts                     ← SQLite 資料庫連線（singleton）
+│   ├── schema.sql                 ← 資料庫 Schema（10 張表，v3）
+│   ├── seed.sql                   ← 測試資料（v3，含叫貨單位）
+│   └── types.ts                   ← TypeScript 型別定義
+
 ├── components/
 │   └── layout/
 │       └── AdminLayout.jsx       ← 後台側邊攔
-│
-├── lib/
-│   ├── db.ts                     ← SQLite 資料庫連線（singleton）
-│   ├── schema.sql                 ← 資料庫 Schema（9張表）
-│   ├── seed.sql                  ← 測試資料
-│   └── types.ts                  ← TypeScript 型別定義
-│
+
 ├── scripts/
 │   └── setup.sh                  ← 一鍵安裝部署腳本
-│
-├── docs/
-│   ├── API-GUIDE.md              ← API 撰寫範例（必看）
-│   └── jinhaoker-pos-api-demo.md  ← 完整 API 文件
-│
-└── package.json
+
+└── docs/
+    ├── getting-started.md         ← 環境建置教學
+    ├── menu-api-example.md        ← Menu API TypeScript 範例
+    └── schema-patch-v3.md         ← Schema v3 變更說明（2026-05-22）
 ```
 
 ---
 
-## 5. 資料庫設計
+## 5. 資料庫設計（v3 — 2026-05-22）
 
-### 5.1 Schema 概覽（11 張表）
+> 基於 PDF（2026/5/20 版）+ schema-patch-v3.md 業務決策整合。
+> ⚠️ **本版 Schema 與 v2 不相容（食材/供應商 PK 從 ID 改為名稱），需砍掉舊 DB 重建。**
+
+### 5.1 Schema 概覽（10 張表）
 
 ```
-supplier ─────┐
-              ▼
-ingredient ───┤
-              ├─ recipe ──► menu_item    │ via ingredient_id
-              │
-              └─► purchase_order (單一食材)   │ via ingredient_id
-                       │
-                       │ 1:1 (最多一張退貨單)
-                       ▼
-                return_order
-                         │
-order_item ◄────────────┘
-              │
-              ▼
-"order" ────────────► delivery_customer（外送顧客地址）
+supplier (name PK) ──────────┐
+                              ▼
+ingredient (name PK) ──────────┤
+                              ├─ recipe ──► menu_item     │ via item_id + ingredient_name
+                              │
+                              └─► purchase_order ──► purchase_order_item
+                                            │
+                                            │ 複合 FK (po_id + ingredient_name)
+                                            ▼
+                                       return_order
 
-inventory_log（庫存異動記錄，輔助表）
+order_item ◄─────────────────────┘
+         │
+         ▼
+"order" ──────────► delivery_customer（phone PK）
 ```
 
 ### 5.2 命名規則
@@ -253,138 +254,160 @@ inventory_log（庫存異動記錄，輔助表）
 | Table 名稱 | 全小寫、底線分隔 `menu_item` |
 | SQL 保留字 table 名 | 雙引號包住 `"order"` |
 | Column 名稱 | 全小寫、底線分隔 `item_id` |
+| PK（食材/供應商）| **使用名稱**（非 ID）：`ingredient.name`、`supplier.name` |
 | JavaScript / TypeScript | 駝峰式 `item_id`、`customerName` |
 
-### 5.3 重點欄位說明
+### 5.3 三大設計決策
+
+| 決策 | 內容 | 理由 |
+|------|------|------|
+| **食材/供應商 PK 用名稱** | `ingredient.name`、`supplier.name` | 小店品項少，代理鍵無必要 |
+| **訂單明細存單價快照** | `order_item.unit_price` | 餐點漲價後歷史訂單仍保留原價 |
+| **出餐才扣庫存** | `PATCH /orders/:id/complete` 時才扣 | 棄單免回補，安全庫存夠厚 |
+
+### 5.4 叫貨單位設計
+
+`ingredient` 表新增三個欄位，實現「整箱叫貨、庫存用片數」：
+
+| 欄位 | 意義 | 範例（帶骨排骨）|
+|------|------|----------------|
+| `stock_unit` | 庫存怎麼數 | 片 |
+| `order_unit` | 叫貨怎麼叫 | 箱 |
+| `qty_per_order_unit` | 1 叫貨單位 = 幾個庫存單位 | 65 |
+
+**一鍵補貨（選項 A）：** 低於安全量 → 叫 1 個 `order_unit` → 庫存 + `qty_per_order_unit`。
+
+### 5.5 重點欄位說明
 
 | Table | 重點欄位 |
 |-------|---------|
-| `menu_item` | `is_active`（軟刪除）、`sort_order`（排序） |
-| `ingredient` | `stock_qty`（目前庫存）、`low_stock_threshold`（低庫存警示線） |
-| `"order"` | `status`（pending/cooking/delivering/completed/cancelled）、`order_id`（文字序號）；含 `customer_phone` FK 至 `delivery_customer` |
-| `delivery_customer` | 外送顧客的姓名、電話、地址（解決 3NF 遞移相依） |
-| `recipe` | 餐點組成（item_id + ingredient_id + consume_qty） |
-| `return_order` | 退貨單，含退貨原因、退貨日期、關聯原始 purchase_order |
-| `return_order_item` | 退貨單明細（item + 數量） |
-| `inventory_log` | 每筆庫存異動的時間、原因、數量、餘量 |
-
-### 5.4 新增表格說明
-
-#### `delivery_customer`（外送顧客）
-| 欄位 | 類型 | 說明 |
-|------|------|------|
-| `phone` | TEXT PRIMARY KEY | 電話（PK），用於關聯訂單 |
-| `name` | TEXT | 顧客姓名 |
-| `address` | TEXT | 外送地址 |
-| `created_at` | TEXT | 建立時間 |
-
-> **設計原因**：`"order"` 的地址欄位造成 3NF 遞移相依（order → phone → address），獨立成表消除冗餘。
-
-#### `return_order`（退貨單）
-| 欄位 | 類型 | 說明 |
-|------|------|------|
-| `return_id` | TEXT PRIMARY KEY | 退貨單號 |
-| `purchase_order_id` | TEXT | 原始採購單（FK） |
-| `return_date` | TEXT | 退貨日期 |
-| `reason` | TEXT | 退貨原因 |
-| `note` | TEXT | 備註 |
-
-#### `return_order_item`（退貨單明細）
-| 欄位 | 類型 | 說明 |
-|------|------|------|
-| `return_id` | TEXT | 隸屬退貨單（FK） |
-| `ingredient_id` | INTEGER | 原料（FK） |
-| `return_qty` | INTEGER | 退貨數量 |
-
-> **設計原因**：進貨驗收不合格時，直接建立退貨單，不修改 purchase_order_item 內容。
-
-### 5.5 Migration 流程
-
-```bash
-# 初始化（第一次架設）
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
-```
-
-> ⚠️ 修改 schema 前先 `DROP TABLE IF EXISTS`，再重新 `CREATE`。正式營運後要另外寫 migration script。
-
-### 5.5 業務假設說明（Schema 設計前提）
-
-**核心假設：金濠客食堂「一張訂購單只對應一種食材」**
-
-這是基於實際採購習慣：肉商、菜商、糧商按品項分流，每次下單只跟一個供應商訂一種食材。此假設讓 schema 能完整對齊 3NF：
-
-- `purchase_order` 不需要 `supplier_id`：透過 `ingredient_id → ingredient.supplier_id → supplier` 鏈式查詢即可取得
-- `return_order` 不需要子明細表：一張退貨單對應一種食材，平鋪結構即可表達
-
-**供應商查詢方式：**
-```sql
-SELECT po.po_id, ing.name AS ingredient_name,
-       sup.name AS supplier_name, sup.phone AS supplier_phone
-FROM purchase_order po
-JOIN ingredient ing ON po.ingredient_id = ing.ingredient_id
-JOIN supplier sup ON ing.supplier_id = sup.supplier_id
-WHERE po.po_id = ?;
-```
+| `supplier` | `name` **（PK）** |
+| `ingredient` | `name` **（PK）**、`stock_unit`/`order_unit`/`qty_per_order_unit`（叫貨單位）、`safety_stock` |
+| `menu_item` | `is_active`（軟刪除）、`price` |
+| `recipe` | `ingredient_name`（FK → ingredient.name）、`consume_qty`（每份消耗量） |
+| `"order"` | `status`（**待製作/製作中/待付款/已完成/已取消**）、`order_id`、`order_date` |
+| `order_item` | **`unit_price`（單價快照）**、`quantity` |
+| `delivery_customer` | `phone`（PK）、`house_number`、`address`、`name` |
+| `purchase_order` | `po_id`（PK）、`supplier_name`（FK）、**`total_amount`**（總金額，驗貨後回填）|
+| `purchase_order_item` | `(po_id, ingredient_name)` **複合 PK**、外鍵參考 purchase_order |
+| `return_order` | `(po_id, ingredient_name)` **複合 PK、複合 FK** 參考 purchase_order_item |
 
 ### 5.6 ERD ↔ Schema 對應表
 
-| PDF ERD 實體/關係 | 類型 | 對應 SQL Table |
-|------------------|------|----------------|
-| 顧客訂單 | Entity | `"order"` |
-| 顧客訂單-包含 | Relationship | `order_item` |
-| 餐點 | Entity | `menu_item` |
-| 食材-消耗 | Relationship | `recipe` |
-| 食材 | Entity | `ingredient` |
-| 供應商 | Entity | `supplier` |
-| 供應（供應商 1:N 食材）| Relationship | `ingredient.supplier_id` (FK) |
-| 訂購單 | Entity | `purchase_order`（單食材，平鋪結構）|
-| 退貨單 | Entity | `return_order`（單食材，平鋪結構）|
-| 產生（訂購單 1:1 退貨單）| Relationship | `return_order.po_id` (FK, UNIQUE) |
-| 外送顧客單 | Entity | `delivery_customer` |
-| — | 實作輔助 | `inventory_log`（庫存異動追蹤）|
+| PDF ERD 實體/關係 | 對應 SQL Table | PK |
+|-----------------|--------------|-----|
+| 1. 顧客訂單 | `"order"` | order_id |
+| 2. 顧客訂單-包含 | `order_item` | (order_id, item_id) |
+| 3. 餐點 | `menu_item` | item_id |
+| 4. 供應商 | `supplier` | **name** |
+| 5. 食材 | `ingredient` | **name** |
+| 6. 食材-消耗 | `recipe` | (item_id, ingredient_name) |
+| 7. 進貨單 | `purchase_order` | po_id |
+| 8. 進貨單明細 | `purchase_order_item` | (po_id, ingredient_name) |
+| 9. 退貨單 | `return_order` | (po_id, ingredient_name) |
+| 10. 外送顧客單 | `delivery_customer` | phone |
 
-### 5.7 SQL 語法要點
+**完全對齊 PDF 第柒節 10 個 relation，無實作輔助表。**
+
+### 5.7 Migration 流程
+
+```bash
+# ⚠️ v3 需砍掉舊 DB 重建（PK 從 ID 改名稱，無法 migration）
+rm -f data/jinhaoker.db
+
+# 初始化
+sqlite3 data/jinhaoker.db < lib/schema.sql
+sqlite3 data/jinhaoker.db < lib/seed.sql
+
+# 驗證
+sqlite3 data/jinhaoker.db ".tables"
+```
+
+### 5.8 SQL 語法要點
 
 ```sql
 -- 時間一律用 +8 小時（SQLite 沒有時區）
-INSERT INTO menu_item (...) VALUES (...)
-  SET created_at = datetime('now', '+8 hours')
+INSERT INTO "order" (order_id, order_date, status, customer_phone)
+VALUES (?, ?, '待製作', ?)
 
 -- 保留字 table 名要加雙引號
 SELECT * FROM "order" WHERE order_id = ?
 
--- Transaction 範例一：外送訂單（先寫顧客、再寫訂單、最後扣庫存）
+-- Transaction 範例一：建立訂單（★ 不扣庫存，出餐才扣）
 BEGIN;
-  INSERT INTO delivery_customer (name, phone, address) VALUES (?, ?, ?);
-  INSERT INTO "order" (order_id, customer_name, customer_phone, status, note) VALUES (?, ?, ?, 'pending', ?);
-  INSERT INTO order_item (order_id, item_id, quantity) VALUES (?, ?, ?);
-  UPDATE ingredient SET stock_qty = stock_qty - ? WHERE ingredient_id = ?;
+  -- 1. 外送顧客（若有電話）
+  INSERT OR IGNORE INTO delivery_customer (phone) VALUES (?);
+
+  -- 2. 寫入訂單主表
+  INSERT INTO "order" (order_id, order_date, status, customer_phone)
+  VALUES (?, ?, '待製作', ?);
+
+  -- 3. 寫入明細 + 單價快照（★ 不扣庫存）
+  INSERT INTO order_item (order_id, item_id, quantity, unit_price)
+  SELECT ?, ?, ?, price FROM menu_item WHERE item_id = ?;
 COMMIT;
 
--- Transaction 範例二：驗收訂購單（合格入庫，不合格觸發退貨）
+-- Transaction 範例二：出餐完成（★ 此時才扣庫存）
 BEGIN;
-  -- 1. 更新訂購單狀態與數量
-  UPDATE purchase_order
-     SET received_qty = ?, qualified_qty = ?,
-         status = CASE
-           WHEN ? = ordered_qty THEN 'received'
-           WHEN ? > 0 THEN 'partial'
-           ELSE 'returned'
-         END
-   WHERE po_id = ?;
-
-  -- 2. 合格數量入庫
+  -- 依據 recipe 扣庫存
   UPDATE ingredient
-     SET stock_qty = stock_qty + ?
-   WHERE ingredient_id = ?;
+  SET stock_qty = stock_qty - (
+    SELECT SUM(r.consume_qty * oi.quantity)
+    FROM order_item oi
+    JOIN recipe r ON oi.item_id = r.item_id
+    WHERE oi.order_id = ? AND r.ingredient_name = ingredient.name
+  )
+  WHERE name IN (SELECT ingredient_name FROM recipe WHERE item_id IN (SELECT item_id FROM order_item WHERE order_id = ?));
 
-  -- 3. 有不合格就建立退貨單（qualified < received）
-  INSERT INTO return_order (po_id, return_date, return_qty, return_reason)
-  SELECT ?, datetime('now', '+8 hours'), ?, ?
-   WHERE ? < ?;   -- 只有不合格才會執行
+  -- 更新訂單狀態
+  UPDATE "order" SET status = '已完成', updated_at = datetime('now', '+8 hours')
+  WHERE order_id = ?;
+COMMIT;
+
+-- Transaction 範例三：驗貨（合格入庫、不合格退貨、回填 total_amount）
+BEGIN;
+  -- 1. 合格數量入庫
+  UPDATE ingredient SET stock_qty = stock_qty + ?
+  WHERE name = ?;
+
+  -- 2. 回填 purchase_order_item 的 total_cost
+  UPDATE purchase_order_item SET total_cost = ? * ?
+  WHERE po_id = ? AND ingredient_name = ?;
+
+  -- 3. 回填主表 total_amount
+  UPDATE purchase_order SET total_amount = (
+    SELECT SUM(total_cost) FROM purchase_order_item WHERE po_id = ?
+  ), status = '已驗貨'
+  WHERE po_id = ?;
+
+  -- 4. 不合格才建立退貨單
+  INSERT INTO return_order (po_id, ingredient_name, return_date, return_reason, return_qty)
+  SELECT ?, ?, datetime('now', '+8 hours'), ?, ?
+   WHERE ? > 0;
 COMMIT;
 ```
+
+### 5.9 進貨單主表 + 明細表結構
+
+**主表 `purchase_order`：**
+| 欄位 | 說明 |
+|------|------|
+| `po_id` | 主鍵，AUTOINCREMENT |
+| `po_date` | 進貨單日期 |
+| `supplier_name` | FK → supplier.name |
+| `total_amount` | **驗貨後回填的總金額（免 JOIN）** |
+| `status` | 已訂購 / 已驗貨 / 部分退貨 |
+
+**明細表 `purchase_order_item`：**
+| 欄位 | 說明 |
+|------|------|
+| `po_id` | FK → purchase_order.po_id |
+| `ingredient_name` | FK → ingredient.name |
+| `order_qty` | 進貨數量（計量單位） |
+| `total_cost` | 合格數量 × 單價（驗貨後回填） |
+| **PK** | `(po_id, ingredient_name)` 複合主鍵 |
+
+**退貨單 `return_order`** 複合 FK 參考 `purchase_order_item(po_id, ingredient_name)`，確保退貨只針對有訂購的食材。
 
 ---
 
@@ -416,47 +439,32 @@ COMMIT;
 ### 6.3 必備區塊（每個 Route Handler 都要有）
 
 ```typescript
-export async function GET(req) {
+export async function GET(req: Request) {
   try {
     // 1. 取得參數（query / params）
     // 2. 驗證參數
     // 3. 操作資料庫
     // 4. 回傳結果
     return NextResponse.json({ success: true, data: ... })
-  } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
   }
 }
 ```
 
-### 6.4 Request / Response 範例（POST /api/orders）
+### 6.4 訂單狀態流（v3）
 
-**Request：**
-```json
-POST /api/orders
-Content-Type: application/json
-
-{
-  "customer_name": "王小明",
-  "customer_phone": "0912-345-678",
-  "note": "不要辣",
-  "items": [
-    { "item_id": 1, "quantity": 2 }
-  ]
-}
+```
+待製作 → 製作中 → 待付款 → 已完成
+    ↑                      ↓
+    └────── 已取消 ←────────┘
 ```
 
-**Response（成功）：**
-```json
-HTTP 201
-{ "success": true, "data": { "order_id": "202605160001" } }
-```
-
-**Response（失敗）：**
-```json
-HTTP 400
-{ "success": false, "error": "customer_name 和 items 為必填欄位" }
-```
+> **庫存扣除時機：** 只有 `PATCH /api/orders/:id/complete`（出餐完成）才會扣庫存。
+> **修改訂單：** 保留 order_id，只重建 order_item（狀態需為「待製作」）。
 
 ### 6.5 API 路由對照表
 
@@ -471,17 +479,104 @@ HTTP 400
 | 查詢全部訂單 | GET | `/api/orders` |
 | 建立訂單 | POST | `/api/orders` |
 | 查詢單一訂單 | GET | `/api/orders/:id` |
-| 更新訂單狀態 | PATCH | `/api/orders/:id/status` |
+| 修改訂單（★ 保留編號） | PUT | `/api/orders/:id` |
+| **出餐完成（★ 扣庫存）** | PATCH | `/api/orders/:id/complete` |
 | 儀表板統計 | GET | `/api/orders/stats` |
-| 查詢庫存 | GET | `/api/inventory` |
+| 查詢庫存（含叫貨單位） | GET | `/api/inventory` |
 | 低庫存警示 | GET | `/api/inventory/check` |
 | 更新庫存 | PUT | `/api/inventory/:id` |
 | 新增食材 | POST | `/api/inventory` |
+| **一鍵補貨（選項A）** | POST | `/api/purchase-orders/auto-restock` |
 | 查詢採購單 | GET | `/api/purchase-orders` |
 | 建立採購單 | POST | `/api/purchase-orders` |
-| 退貨登記 | POST | `/api/purchase-orders/:id/returns` |
+| 查詢採購單明細 | GET | `/api/purchase-orders/:id` |
+| **驗貨（★ 回填 total_amount）** | POST | `/api/purchase-orders/:id/receive` |
 | 查詢供應商 | GET | `/api/suppliers` |
 | 新增供應商 | POST | `/api/suppliers` |
+| 更新供應商 | PUT | `/api/suppliers/:id` |
+
+### 6.6 Request / Response 範例
+
+#### POST /api/orders（建立訂單，★ 不扣庫存）
+
+**Request：**
+```json
+POST /api/orders
+Content-Type: application/json
+
+{
+  "customer_phone": "0912-345-678",
+  "items": [
+    { "item_id": 1, "quantity": 2 }
+  ]
+}
+```
+
+**Response（成功）：**
+```json
+HTTP 201
+{ "success": true, "data": { "order_id": "202605220001" } }
+```
+
+> **說明：** 不傳 `customer_name`，改由 `customer_phone` 關聯到 `delivery_customer`。
+
+#### PATCH /api/orders/:id/complete（出餐完成，★ 此時才扣庫存）
+
+**Request：**
+```json
+PATCH /api/orders/:id/complete
+```
+
+**Response（成功）：**
+```json
+{ "success": true }
+```
+
+> **行為：** 根據 `order_item` 查 `recipe`，逐筆扣 `ingredient.stock_qty`，再將訂單 status 改為「已完成」。
+
+#### POST /api/purchase-orders/auto-restock（一鍵補貨，選項 A）
+
+**Request：**
+```json
+POST /api/purchase-orders/auto-restock
+```
+
+**Response（成功）：**
+```json
+{
+  "success": true,
+  "data": {
+    "purchase_orders": [
+      { "po_id": 1, "supplier_name": "肉品大王", "items": ["排骨", "雞腿"] },
+      { "po_id": 2, "supplier_name": "蔬果行", "items": ["高麗菜"] }
+    ]
+  }
+}
+```
+
+> **行為：** 找出所有低於安全量的食材，依供應商分組，每食材叫 1 個 `order_unit`（=`qty_per_order_unit` 個計量單位）。
+
+#### POST /api/purchase-orders/:id/receive（驗貨）
+
+**Request：**
+```json
+POST /api/purchase-orders/123/receive
+Content-Type: application/json
+
+{
+  "items": [
+    { "ingredient_name": "排骨", "received_qty": 65, "qualified_qty": 63, "unit_price": 150, "reject_reason": "" },
+    { "ingredient_name": "雞腿", "received_qty": 15, "qualified_qty": 12, "unit_price": 120, "reject_reason": "2 支外觀不良" }
+  ]
+}
+```
+
+**Response（成功）：**
+```json
+{ "success": true, "data": { "total_amount": 10890, "status": "部分退貨" } }
+```
+
+> **行為：** 合格數量入庫、不合格寫退貨單、回填 `purchase_order_item.total_cost`、彙總 `purchase_order.total_amount`。
 
 ---
 
