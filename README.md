@@ -16,17 +16,13 @@
        lib/seed.sql（25道菜 + 12種食材測試資料）
        lib/db.ts（SQLite singleton，init 時自動執行 schema + seed）
          ↓
-第2層  TypeScript API
-  ↓    app/api/（26支 API route）
+第2層  TypeScript API（26支）
          ↓
-第3層  前台（顧客點餐）
-  ↓    app/page.jsx
+第3層  前台（顧客點餐）→ app/page.jsx
          ↓
-第4層  後台（管理員介面）
-  ↓    app/admin/（選單管理、訂單看板、庫存管理、供應商）
+第4層  後台（管理員介面）→ app/admin/
          ↓
-第5層  啟動 Script
-       next.config.js（PORT、Tailscale Funnel）
+第5層  部署：VPS + Tailscale Funnel
 ```
 
 ---
@@ -42,40 +38,156 @@ jinhaoke/
 │   │
 │   ├── admin/                   ← 後台（管理員）
 │   │   ├── layout.jsx           ← AdminLayout（含側邊攔）
-│   │   ├── page.jsx             ← 訂單看板（拖曳更新狀態）
+│   │   ├── page.jsx             ← 訂單看板（拖曳更新狀態）✅
 │   │   └── inventory/
-│   │       └── page.jsx         ← 庫存管理頁
+│   │       └── page.jsx         ← 庫存管理頁（待串 API）
 │   │
 │   └── api/                     ← TypeScript API Routes
 │       ├── menu/
-│       │   ├── route.ts         ← GET（全部）+ POST（新增）
-│       │   └── [id]/route.ts    ← GET + PUT + DELETE（軟刪）
+│       │   ├── route.ts        ← GET + POST（✅）
+│       │   └── [id]/route.ts   ← GET + PUT + DELETE（✅）
 │       ├── orders/
-│       │   ├── route.ts         ← GET（全部）+ POST（下單）
+│       │   ├── route.ts        ← GET + POST（✅）
 │       │   └── status/
-│       │       └── route.ts     ← PATCH（更新狀態）
-│       ├── inventory/           ← （待實作）GET + PUT
-│       ├── suppliers/            ← （待實作）CRUD
-│       ├── ingredients/          ← （待實作）CRUD
-│       ├── purchase-orders/      ← （待實作）CRUD + 驗貨 + 退貨
-│       └── reports/              ← （待實作）daily + monthly
+│       │       └── route.ts    ← PATCH（✅）
+│       ├── inventory/           ← GET + PUT（❌ 組員）
+│       ├── suppliers/           ← CRUD（❌ 組員）
+│       ├── ingredients/         ← CRUD（❌ 組員）
+│       ├── purchase-orders/     ← CRUD + 驗貨 + 退貨（❌ 組員）
+│       └── reports/              ← daily + monthly（❌ 組員）
 │
 ├── lib/
 │   ├── db.ts                    ← SQLite singleton
-│   ├── schema.sql                ← 10張表定義（v3）
-│   └── seed.sql                  ← 測試資料
+│   ├── schema.sql              ← 10張表定義（v3）✅
+│   └── seed.sql                ← 測試資料 ✅
+│
+├── scripts/
+│   ├── setup.sh                ← 一鍵建置（❌ 組員）
+│   ├── init-db.sh              ← 重置資料庫（❌ 組員）
+│   └── test-api.sh             ← API 測試腳本（❌ 組員）
 │
 ├── docs/
-│   ├── README.md                 ← 本檔案
-│   ├── api-reference.md          ← 完整 API 文件（✅ 有）
-│   ├── api-guide.md              ← HTTP 方法說明（✅ 有）
-│   ├── schema-reference.md        ← 10張表欄位說明（✅ 有）
-│   └── ...（其他 tutorial）
+│   ├── api-reference.md        ← 26支 API 的 request / response 格式
+│   ├── api-guide.md            ← GET / POST / PUT / PATCH / DELETE 說明
+│   └── schema-reference.md     ← 10張表欄位說明
 │
-├── next.config.js
-├── tailwind.config.js
-└── tsconfig.json
+└── ...
 ```
+
+---
+
+## 10天衝刺計畫
+
+> **Deadline：10天內完成所有 ❌ 項目 + Deploy**
+
+### Day 1-2：API（組員主導）
+
+```
+目標：17支 API 全部實作完成
+- 組員：對照 docs/api-reference.md 實作各自認領的 API
+- 你：確認出餐扣庫存邏輯（PATCH status → done 時的庫存扣除）
+- 所有人：不懂的語法查 docs/api-guide.md
+- 驗收：每支 API 都用 curl 測過
+```
+
+### Day 3-4：後台頁面串 API
+
+```
+目標：後台各頁面能正常讀寫
+- 組員：選單管理、供應商管理、庫存頁面串 API
+- 你：協助串聯、確保前台/後台不衝突
+- 驗收：前後台能共同操作同一份 DB 資料
+```
+
+### Day 5-6：商業邏輯 + Reports
+
+```
+目標：出餐扣庫存、一鍵補貨、報表全部上線
+- 組員：auto-restock、驗貨入庫、退貨邏輯
+- 組員：daily / monthly 報表 API + 頁面
+- 你：確認出餐時庫存正確減少
+```
+
+### Day 7-8：Scripts + 整合測試
+
+```
+目標：任何人都能乾淨地 clone → npm install → npm run dev
+- 組員：scripts/init-db.sh、setup.sh、test-api.sh
+- 全員：前后台串接測試、修 Bug
+```
+
+### Day 9-10：部署
+
+```
+目標：老師能透過 URL 訪問系統
+- 你：VPS + Tailscale Funnel 部署
+- 全員：Postman 測試所有 API 文件化
+- 全員：準備報告文件
+```
+
+---
+
+## API 列表（26支）含分工
+
+| # | 方法 | 路由 | 說明 | 負責人 |
+|---|------|------|------|--------|
+| 1 | GET | `/api/menu` | 查詢全部菜單 | ✅ 已完成 |
+| 2 | POST | `/api/menu` | 新增品項 | ✅ 已完成 |
+| 3 | GET | `/api/menu/:id` | 查詢單一品項 | ✅ 已完成 |
+| 4 | PUT | `/api/menu/:id` | 修改品項 | ✅ 已完成 |
+| 5 | DELETE | `/api/menu/:id` | 軟刪除品項 | ✅ 已完成 |
+| 6 | GET | `/api/orders` | 查詢全部訂單 | ✅ 已完成 |
+| 7 | POST | `/api/orders` | 新增訂單 | ✅ 已完成 |
+| 8 | PATCH | `/api/orders/status` | 更新訂單狀態 + **出餐扣庫存** | ✅ 已完成 |
+| 9 | DELETE | `/api/orders/:id` | 取消訂單 | 👤 組員 |
+| 10 | GET | `/api/inventory` | 查詢庫存 | 👤 組員 |
+| 11 | PUT | `/api/inventory/:name` | 調整庫存 | 👤 組員 |
+| 12 | GET | `/api/purchase-orders` | 查詢進貨單 | 👤 組員 |
+| 13 | POST | `/api/purchase-orders` | 新建進貨單 | 👤 組員 |
+| 14 | POST | `/api/orders/auto-restock` | **一鍵補貨**（低於安全存量自動產出進貨單）| 👤 組員 |
+| 15 | POST | `/api/purchase-orders/:id/receive` | **驗貨入庫**（更新 purchase_order 狀態 + 實際入庫）| 👤 組員 |
+| 16 | POST | `/api/purchase-orders/:id/return` | **登錄退貨**（建 return_order + 庫存扣減）| 👤 組員 |
+| 17 | GET | `/api/suppliers` | 查詢供應商 | 👤 組員 |
+| 18 | POST | `/api/suppliers` | 新增供應商 | 👤 組員 |
+| 19 | PUT | `/api/suppliers/:name` | 修改供應商 | 👤 組員 |
+| 20 | DELETE | `/api/suppliers/:name` | 刪除供應商 | 👤 組員 |
+| 21 | GET | `/api/ingredients` | 查詢食材 | 👤 組員 |
+| 22 | POST | `/api/ingredients` | 新增食材 | 👤 組員 |
+| 23 | PUT | `/api/ingredients/:name` | 修改食材 | 👤 組員 |
+| 24 | DELETE | `/api/ingredients/:name` | 刪除食材 | 👤 組員 |
+| 25 | GET | `/api/reports/daily` | 每日營收 | 👤 組員 |
+| 26 | GET | `/api/reports/monthly` | 月營收 | 👤 組員 |
+
+> ✅ = 已實作　👤 = 組員實作
+
+---
+
+## 分工
+
+### 👤 組員負責
+
+| 項目 | 說明 |
+|------|------|
+| API（#9 - #26）| 17支 API，詳見上方表格 |
+| 後台頁面 | 選單管理、供應商管理、庫存頁面、報表頁面 |
+| Scripts | `setup.sh`、`init-db.sh`、`test-api.sh` |
+
+### 你負責
+
+| 項目 | 說明 |
+|------|------|
+| 出餐扣庫存 | 建議寫在 PATCH `/api/orders/status` 裡（當 status = "done" 時觸發）|
+| 前台整合 | 確認前後台串聯正確 |
+| 部署 | VPS + Tailscale Funnel |
+| Reports 頁面 | daily / monthly 頁面（若組員來不及）|
+
+### 實作前必讀文件
+
+| 文件 | 什麼時候讀 |
+|------|-----------|
+| [docs/api-reference.md](docs/api-reference.md) | 實作任何 API 前 |
+| [docs/api-guide.md](docs/api-guide.md) | 不確定 GET/PUT/PATCH 差別時 |
+| [docs/schema-reference.md](docs/schema-reference.md) | 不確定某張表有哪些欄位時 |
 
 ---
 
@@ -101,7 +213,7 @@ order_item ◄─┤
 | 表 | 主鍵 | 用途 |
 |---|------|------|
 | `supplier` | name（TEXT）| 供應商（電話、名稱）|
-| `ingredient` | name（TEXT）| 食材含庫存：stock_qty、safety_stock、叫貨單位設計 |
+| `ingredient` | name（TEXT）| 食材含庫存、叫貨單位設計 |
 | `menu_item` | item_id（AUTO）| 菜單（emoji/tag/sub/option 為顯示用）|
 | `recipe` | (item_id, ingredient_name) | 配方：每份餐點消耗哪些食材 |
 | `delivery_customer` | phone（TEXT）| 外送顧客（3NF：地址在這裡，訂單只存 phone）|
@@ -119,9 +231,18 @@ order_item ◄─┤
 4. **庫存在出餐時扣除**（PATCH `/api/orders/status` → `done`），不是下單時
 5. **叫貨單位設計**：`order_unit`（叫貨箱/包）× `qty_per_order_unit`（每單位等於多少 stock_unit）
 
+### 庫存異動時機（實作時注意）
+
+| 動作 | 觸發 | 影響 |
+|------|------|------|
+| 下單 | POST `/api/orders` | 只寫入 order + order_item，**不扣庫存** |
+| 出餐 | PATCH `/api/orders/status` → `done` | 查 `recipe`，扣各項食材庫存 |
+| 進貨入庫 | POST `/api/purchase-orders/:id/receive` | 增加 `ingredient.stock_qty` |
+| 退貨 | POST `/api/purchase-orders/:id/return` | 減少 `ingredient.stock_qty` |
+
 ---
 
-## API 開發規範
+## API 開發規範（實作前必讀）
 
 ### 統一回應格式
 
@@ -153,6 +274,7 @@ export async function GET(req) {
     // 4. 回傳結果
     return NextResponse.json({ success: true, data: ... })
   } catch (err) {
+    console.error('[GET /api/...]', err)
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
       { status: 500 }
@@ -161,58 +283,18 @@ export async function GET(req) {
 }
 ```
 
----
+### Transaction 要一起成功或一起失敗
 
-## API 列表（26支）
-
-| # | 方法 | 路由 | 說明 | 狀態 |
-|---|------|------|------|------|
-| 1 | GET | `/api/menu` | 查詢全部菜單（可 filter by category） | ✅ |
-| 2 | POST | `/api/menu` | 新增品項 | ✅ |
-| 3 | GET | `/api/menu/:id` | 查詢單一品項 | ✅ |
-| 4 | PUT | `/api/menu/:id` | 修改品項 | ✅ |
-| 5 | DELETE | `/api/menu/:id` | 軟刪除品項 | ✅ |
-| 6 | GET | `/api/orders` | 查詢全部訂單 | ✅ |
-| 7 | POST | `/api/orders` | 新增訂單 | ✅ |
-| 8 | PATCH | `/api/orders/status` | 更新訂單狀態 | ✅ |
-| 9 | DELETE | `/api/orders/:id` | 取消訂單 | ❌ |
-| 10 | GET | `/api/inventory` | 查詢庫存 | ❌ |
-| 11 | PUT | `/api/inventory/:name` | 調整庫存 | ❌ |
-| 12 | GET | `/api/purchase-orders` | 查詢進貨單 | ❌ |
-| 13 | POST | `/api/purchase-orders` | 新建進貨單 | ❌ |
-| 14 | POST | `/api/orders/auto-restock` | 一鍵補貨 | ❌ |
-| 15 | POST | `/api/purchase-orders/:id/receive` | 驗貨入庫 | ❌ |
-| 16 | POST | `/api/purchase-orders/:id/return` | 登錄退貨 | ❌ |
-| 17 | GET | `/api/suppliers` | 查詢供應商 | ❌ |
-| 18 | POST | `/api/suppliers` | 新增供應商 | ❌ |
-| 19 | PUT | `/api/suppliers/:name` | 修改供應商 | ❌ |
-| 20 | DELETE | `/api/suppliers/:name` | 刪除供應商 | ❌ |
-| 21 | GET | `/api/ingredients` | 查詢食材 | ❌ |
-| 22 | POST | `/api/ingredients` | 新增食材 | ❌ |
-| 23 | PUT | `/api/ingredients/:name` | 修改食材 | ❌ |
-| 24 | DELETE | `/api/ingredients/:name` | 刪除食材 | ❌ |
-| 25 | GET | `/api/reports/daily` | 每日營收 | ❌ |
-| 26 | GET | `/api/reports/monthly` | 月營收 | ❌ |
-
-> ✅ = 已實作　❌ = 待實作
-
----
-
-## 分工建議
-
-| 層 | 負責人 | 目前進度 |
-|---|--------|---------|
-| SQL | 確定 | ✅ 完成（10張表） |
-| API（✅ 5支） | 確定 | 組員認領 ❌ 21支 |
-| 前台 | 你 | ✅ 串 API 完成 |
-| 後台 | 組員 | 部分完成（訂單看板 ✅）|
-| 啟動腳本 | 待補 | 待補 |
-
-### 協作原則
-- **各層独立開發**，上一層串下一層的 API，不直接碰其他層的 code
-- **API 格式必須符合** `api-reference.md`，組員實作前先看這份文件
-- **HTTP 方法**看 `api-guide.md`
-- **Schema 欄位**看 `docs/schema-reference.md`
+```typescript
+db.transaction(() => {
+  // 寫入多張表時，包在同一筆 transaction
+  insertOrder.run(...)
+  for (const item of items) {
+    insertOrderItem.run(...)
+  }
+})()
+// 中途失敗，全部 rollback
+```
 
 ---
 
@@ -236,54 +318,6 @@ npm run dev
 ```
 
 > 第一次啟動時，`lib/db.ts` 會自動執行 `schema.sql` + `seed.sql`，不需手動 init 資料庫。
-
-### WSL
-
-```bash
-cd ~/jinhaoke/jinhaoke
-npm install
-npm run dev
-```
-
----
-
-## 常用指令
-
-```bash
-# 開發
-npm run dev          # 開發模式（熱重載）
-npm run build        # 建置 Production 版
-npm start            # 啟動 Production 版
-
-# Git
-git status           # 查看變更
-git add .            # 暫存變更
-git commit -m "..."  # 提交
-git push             # 推送到 GitHub
-git pull             # 拉取並合併
-```
-
----
-
-## 缴交成品規格（預定）
-
-- ✅ 前台：顧客觸控點餐、購物車、訂單送出
-- ✅ 後台：訂單看板、狀態拖曳更新
-- ❌ 後台：菜單 CRUD、庫存管理、供應商管理
-- ❌ 報表：每日/月營收
-- ❌ 庫存：自動扣庫存（出餐時）、一鍵補貨
-- ❌ 部署：VPS + Tailscale Funnel
-
----
-
-## 組員文件索引
-
-| 文件 | 用途 |
-|------|------|
-| [README.md](README.md) | 1. 檔案架構（完整目錄樹 + 五層流程圖） |
-| [docs/api-reference.md](docs/api-reference.md) | 2. 全部 26 支 API 的 request / response 格式 |
-| [docs/api-guide.md](docs/api-guide.md) | 3. GET / POST / PUT / PATCH / DELETE 差異說明 + 10點實作檢查清單 |
-| [docs/schema-reference.md](docs/schema-reference.md) | 4. Schema v3 完整說明（10張表欄位 + 設計決策）|
 
 ---
 
@@ -318,9 +352,20 @@ git pull             # 拉取並合併
 main（隨時可部署）
   └── feat/menu-api（功能完成後）
           │
-          ├── PR → Code Review（由 Chaeryeong 負責）
+          ├── PR → Code Review
           │
           └── Merge（squash merge 進 main）
 ```
 
 > **重要**：所有變更透過 PR 併入 main，不要直接 push 到 main。
+
+---
+
+## 缴交成品規格（10天後）
+
+- ✅ 前台：顧客觸控點餐、購物車、訂單送出
+- ✅ 後台：訂單看板、狀態拖曳更新
+- ✅ API：26支全部上線
+- ❌ 後台：選單 CRUD、庫存管理、供應商管理、報表頁面
+- ❌ 庫存：自動扣庫存（出餐時）、一鍵補貨、驗貨入庫、退貨
+- ❌ 部署：VPS + Tailscale Funnel
