@@ -1,452 +1,158 @@
 # 金濠客食堂 POS 系統
 
 > 前台點餐 + 後台管理系統
-> 前端：React (JavaScript)｜API：TypeScript｜資料庫：SQLite｜部署：Next.js + Tailscale Funnel
+>
+> 前端：React (JavaScript)｜API：TypeScript｜資料庫：SQLite
 
 ---
 
-## 目錄
+## 五層開發流程
 
-1. [系統概覽](#1-系統概覽)
-2. [系統架構圖](#2-系統架構圖)
-3. [開發環境建置](#3-開發環境建置)
-4. [目錄結構](#4-目錄結構)
-5. [資料庫設計](#5-資料庫設計)
-6. [API 開發規範](#6-api-開發規範)
-7. [前端開發規範](#7-前端開發規範)
-8. [整合測試](#8-整合測試)
-9. [分工建議](#9-git-協作規範)
-10. [開始實作](#10-開始實作)
-11. [繳交成品規格](#11-繳交成品規格)
-
----
-
-## 1. 系統概覽
-
-### 1.1 系統目標
-建立一個針對中小型餐飲業的 POS 系統，核心功能：
-- **前台**：顧客自行點餐（觸控介面）
-- **後台**：管理菜單、訂單、庫存、供應商
-- **報表**：每日營收、熱門品項、低庫存警示
-
-### 1.2 Tech Stack
-
-| 層      | 技術                      | 說明                             |
-| ------ | ----------------------- | ------------------------------ |
-| 前端框架   | Next.js 14 (App Router) | 前台、後台都是 React                  |
-| 前端語言   | JavaScript              | 前台、後台 UI                       |
-| API 層  | Next.js API Routes      | 後端商業邏輯                         |
-| API 語言 | TypeScript              | 所有 `app/api/` 下的 route handler |
-| 資料庫    | SQLite（better-sqlite3）  | 單一 `.db` 檔案，無需架構 DB 伺服器        |
-| 樣式     | Tailwind CSS            | 響應式 UI                         |
-| 部署     | VPS + Tailscale Funnel  | 自動 HTTPS URL，零設定對外暴露           |
-| 網域     | Tailscale 自動產生          | `https://xxx.ts.net`           |
-
-### 1.3 功能對應
-
-| 功能 | 前台（顧客） | 後台（管理員） |
-|------|------------|--------------|
-| 瀏覽菜單 | ✅ | ✅ |
-| 加入購物車 | ✅ | — |
-| 提交訂單 | ✅ | — |
-| 管理菜單（CRUD） | — | ✅ |
-| 查看/變更訂單狀態 | — | ✅ |
-| 庫存查詢與調整 | — | ✅ |
-| 供應商管理 | — | ✅ |
-| 儀表板統計 | — | ✅ |
-
----
-
-## 2. 系統架構圖
+本專案由下而上分為五層，**上一層依賴下一層**：
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     租的 VPS (雲端主機)                        │
-│                                                              │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │               Next.js App (Port 3100)               │   │
-│   │                                                     │   │
-│   │   ┌──────────────┐         ┌────────────────────┐  │   │
-│   │   │   Frontend   │         │    API Layer       │  │   │
-│   │   │  (React/JS)  │         │ (TypeScript Routes)│  │   │
-│   │   ├──────────────┤         ├────────────────────┤  │   │
-│   │   │  前台 `/`    │──fetch──│  app/api/menu/    │  │   │
-│   │   │  後台        │◀─JSON───│  app/api/orders/  │  │   │
-│   │   │  /admin/*    │         │  app/api/inventory/│  │   │
-│   │   └──────────────┘         └─────────┬──────────┘  │   │
-│   └──────────────────────────────────────┼───────────┘   │
-│                                            │               │
-│                                            ▼               │
-│                              ┌─────────────────────────┐   │
-│                              │   lib/db.ts            │   │
-│                              │   (better-sqlite3)      │   │
-│                              └─────────┬───────────────┘   │
-│                                        │                   │
-│                                        ▼                   │
-│                              ┌─────────────────────────┐   │
-│                              │  data/jinhaoker.db      │   │
-│                              │  (SQLite 單一檔案)       │   │
-│                              └─────────────────────────┘   │
-│                                                             │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │             Tailscale Funnel (Port 3100 → HTTPS)   │   │
-│   │              自動產生 https://xxx.ts.net            │   │
-│   └─────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              │ HTTPS
-                              ▼
-              ┌───────────────────────────────┐
-              │  組員 / 老師 / 顧客  瀏覽器     │
-              │                               │
-              │  前台：https://xxx.ts.net/    │
-              │  後台：https://xxx.ts.net/admin │
-              └───────────────────────────────┘
+第1層  SQL（Schema + Seed）
+  ↓    lib/schema.sql（10張表定義）
+       lib/seed.sql（25道菜 + 12種食材測試資料）
+       lib/db.ts（SQLite singleton，init 時自動執行 schema + seed）
+         ↓
+第2層  TypeScript API
+  ↓    app/api/（26支 API route）
+         ↓
+第3層  前台（顧客點餐）
+  ↓    app/page.jsx
+         ↓
+第4層  後台（管理員介面）
+  ↓    app/admin/（選單管理、訂單看板、庫存管理、供應商）
+         ↓
+第5層  啟動 Script
+       next.config.js（PORT、Tailscale Funnel）
 ```
 
 ---
 
-## 3. 開發環境建置
+## 目錄結構
 
-### 3.1 硬體與網路需求
-
-| 項目 | 需求 |
-|------|------|
-| 雲端 VPS | 一台（建議 1GB RAM 以上） |
-| 作業系統 | Ubuntu 24.04 LTS |
-| Tailscale | 已登入帳號（用于產生 public URL） |
-| SSH 存取 | 組員各自的 SSH key 已加入 VPS |
-
-### 3.2 一鍵安裝腳本
-
-在 VPS 上執行以下指令安裝所有依賴：
-
-```bash
-# 複製此 repo
-git clone git@github.com:Chuannnn1/jinhaoker-pos.git
-cd jinhaoker-pos
-
-# 執行安裝腳本
-bash scripts/setup.sh
 ```
-
-**`scripts/setup.sh` 會做以下事情：**
-1. 安裝 Node.js 20.x（via NodeSource）
-2. 安裝 npm 依賴（`npm install`）
-3. 初始化 SQLite 資料庫（跑 `schema.sql` + `seed.sql`）
-4. 安裝 Tailscale 並啟動
-5. 啟用 Tailscale Funnel（對外暴露 3100 port）
-6. 顯示 Tailscale 產生的 public URL
-
-> ⚠️ 詳細腳本內容見 [附錄 A：setup.sh](#附錄-a：setupsh)
-
-### 3.3 啟動方式
-
-```bash
-# 開發模式（會熱重載）
-npm run dev
-
-# 生產模式
-npm start
-```
-
-### 3.4 對外 access
-
-啟動 Tailscale Funnel 後，VPS 會自動產生一個 `https://xxx.ts.net` 的 URL。
-
-```bash
-# 查看目前產生的 URL
-tailscale funnel status
-```
-
----
-
-## 4. 目錄結構
-
-```text
-jinhaoker-pos/
+jinhaoke/
 ├── app/
-│   ├── page.jsx                  ← 前台（顧客點餐頁）
-│   ├── layout.jsx                ← Root layout
-│   ├── globals.css               ← 全域樣式（Tailwind）
+│   ├── page.jsx                 ← 前台：顧客點餐頁（串 /api/menu、/api/orders）
+│   ├── layout.jsx               ← Root Layout
+│   ├── globals.css              ← Tailwind CSS 全域樣式
 │   │
-│   ├── admin/                    ← 後台頁面
-│   │   ├── layout.jsx            ← AdminLayout（含 Sidebar）
-│   │   ├── dashboard/page.jsx    ← 儀表板
-│   │   ├── menu/page.jsx         ← 菜單管理
-│   │   ├── orders/page.jsx       ← 訂單管理
-│   │   └── inventory/page.jsx    ← 庫存管理
+│   ├── admin/                   ← 後台（管理員）
+│   │   ├── layout.jsx           ← AdminLayout（含側邊攔）
+│   │   ├── page.jsx             ← 訂單看板（拖曳更新狀態）
+│   │   └── inventory/
+│   │       └── page.jsx         ← 庫存管理頁
 │   │
-│   └── api/                      ← API 層（TypeScript）
-│       ├── health/route.ts        ← 健康檢查
+│   └── api/                     ← TypeScript API Routes
 │       ├── menu/
-│       │   ├── route.ts          ← GET list、POST 新增
-│       │   ├── [id]/route.ts      ← GET one、PUT 更新、DELETE 刪除
-│       │   └── categories/route.ts ← GET 分類列表
+│       │   ├── route.ts         ← GET（全部）+ POST（新增）
+│       │   └── [id]/route.ts    ← GET + PUT + DELETE（軟刪）
 │       ├── orders/
-│       │   ├── route.ts          ← GET list、POST 建立訂單
-│       │   ├── [id]/route.ts     ← GET one、PUT 修改（保留編號）
-│       │   ├── [id]/complete/route.ts ← PATCH 出餐完成（★ 扣庫存）
-│       │   └── stats/route.ts    ← GET 儀表板統計
-│       ├── inventory/
-│       │   ├── route.ts          ← GET list、POST 新增食材
-│       │   ├── [id]/route.ts     ← GET one、PUT 更新庫存
-│       │   └── check/route.ts    ← GET 低庫存警示
-│       ├── purchase-orders/
-│       │   ├── route.ts          ← GET list、POST 建立採購單
-│       │   ├── auto-restock/route.ts ← POST 一鍵補貨（選項A）
-│       │   ├── [id]/route.ts     ← GET/PUT
-│       │   └── [id]/receive/route.ts ← POST 驗貨（回填 total_amount）
-│       └── suppliers/
-│           ├── route.ts          ← GET list、POST 新增
-│           └── [id]/route.ts     ← GET/PUT
-
+│       │   ├── route.ts         ← GET（全部）+ POST（下單）
+│       │   └── status/
+│       │       └── route.ts     ← PATCH（更新狀態）
+│       ├── inventory/           ← （待實作）GET + PUT
+│       ├── suppliers/            ← （待實作）CRUD
+│       ├── ingredients/          ← （待實作）CRUD
+│       ├── purchase-orders/      ← （待實作）CRUD + 驗貨 + 退貨
+│       └── reports/              ← （待實作）daily + monthly
+│
 ├── lib/
-│   ├── db.ts                     ← SQLite 資料庫連線（singleton）
-│   ├── schema.sql                 ← 資料庫 Schema（10 張表，v3）
-│   ├── seed.sql                   ← 測試資料（v3，含叫貨單位）
-│   └── types.ts                   ← TypeScript 型別定義
-
-├── components/
-│   └── layout/
-│       └── AdminLayout.jsx       ← 後台側邊攔
-
-├── scripts/
-│   └── setup.sh                  ← 一鍵安裝部署腳本
-
-└── docs/
-    ├── getting-started.md         ← 環境建置教學
-    ├── menu-api-example.md        ← Menu API TypeScript 範例
-    └── schema-patch-v3.md         ← Schema v3 變更說明（2026-05-22）
+│   ├── db.ts                    ← SQLite singleton
+│   ├── schema.sql                ← 10張表定義（v3）
+│   └── seed.sql                  ← 測試資料
+│
+├── docs/
+│   ├── README.md                 ← 本檔案
+│   ├── api-reference.md          ← 完整 API 文件（✅ 有）
+│   ├── api-guide.md              ← HTTP 方法說明（✅ 有）
+│   ├── schema-reference.md        ← 10張表欄位說明（✅ 有）
+│   └── ...（其他 tutorial）
+│
+├── next.config.js
+├── tailwind.config.js
+└── tsconfig.json
 ```
 
 ---
 
-## 5. 資料庫設計（v3 — 2026-05-22）
+## 資料庫設計（Schema v3 — 10張表）
 
-> 基於 PDF（2026/5/20 版）+ schema-patch-v3.md 業務決策整合。
-> ⚠️ **本版 Schema 與 v2 不相容（食材/供應商 PK 從 ID 改為名稱），需砍掉舊 DB 重建。**
-
-### 5.1 Schema 概覽（10 張表）
+### ER 圖
 
 ```
-supplier (name PK) ──────────┐
-                              ▼
-ingredient (name PK) ──────────┤
-                              ├─ recipe ──► menu_item     │ via item_id + ingredient_name
-                              │
-                              └─► purchase_order ──► purchase_order_item
-                                            │
-                                            │ 複合 FK (po_id + ingredient_name)
-                                            ▼
-                                       return_order
-
-order_item ◄─────────────────────┘
-         │
-         ▼
-"order" ──────────► delivery_customer（phone PK）
+supplier ────────────┐
+                     ▼
+ingredient ───┬── recipe ──► menu_item
+             │
+             ├── purchase_order ── purchase_order_item ── return_order
+             │
+order_item ◄─┤
+             │
+             ▼
+"order" ────► delivery_customer（外送顧客）
 ```
 
-### 5.2 命名規則
+### 表說明
 
-| 規則 | 範例 |
-|------|------|
-| Table 名稱 | 全小寫、底線分隔 `menu_item` |
-| SQL 保留字 table 名 | 雙引號包住 `"order"` |
-| Column 名稱 | 全小寫、底線分隔 `item_id` |
-| PK（食材/供應商）| **使用名稱**（非 ID）：`ingredient.name`、`supplier.name` |
-| JavaScript / TypeScript | 駝峰式 `item_id`、`customerName` |
+| 表 | 主鍵 | 用途 |
+|---|------|------|
+| `supplier` | name（TEXT）| 供應商（電話、名稱）|
+| `ingredient` | name（TEXT）| 食材含庫存：stock_qty、safety_stock、叫貨單位設計 |
+| `menu_item` | item_id（AUTO）| 菜單（emoji/tag/sub/option 為顯示用）|
+| `recipe` | (item_id, ingredient_name) | 配方：每份餐點消耗哪些食材 |
+| `delivery_customer` | phone（TEXT）| 外送顧客（3NF：地址在這裡，訂單只存 phone）|
+| `"order"` | order_id（TEXT）| 顧客訂單含 status（待製作→製作中→待付款→已完成→已取消）|
+| `order_item` | (order_id, item_id) | 訂單明細，**★ unit_price 存快照**，漲價不影響歷史 |
+| `purchase_order` | po_id（AUTO）| 進貨單主表含 total_amount |
+| `purchase_order_item` | (po_id, ingredient_name) | 進貨明細 |
+| `return_order` | (po_id, ingredient_name) | 退貨單 |
 
-### 5.3 三大設計決策
+### 設計決策摘要
 
-| 決策 | 內容 | 理由 |
-|------|------|------|
-| **食材/供應商 PK 用名稱** | `ingredient.name`、`supplier.name` | 小店品項少，代理鍵無必要 |
-| **訂單明細存單價快照** | `order_item.unit_price` | 餐點漲價後歷史訂單仍保留原價 |
-| **出餐才扣庫存** | `PATCH /orders/:id/complete` 時才扣 | 棄單免回補，安全庫存夠厚 |
-
-### 5.4 叫貨單位設計
-
-`ingredient` 表新增三個欄位，實現「整箱叫貨、庫存用片數」：
-
-| 欄位 | 意義 | 範例（帶骨排骨）|
-|------|------|----------------|
-| `stock_unit` | 庫存怎麼數 | 片 |
-| `order_unit` | 叫貨怎麼叫 | 箱 |
-| `qty_per_order_unit` | 1 叫貨單位 = 幾個庫存單位 | 65 |
-
-**一鍵補貨（選項 A）：** 低於安全量 → 叫 1 個 `order_unit` → 庫存 + `qty_per_order_unit`。
-
-### 5.5 重點欄位說明
-
-| Table | 重點欄位 |
-|-------|---------|
-| `supplier` | `name` **（PK）** |
-| `ingredient` | `name` **（PK）**、`stock_unit`/`order_unit`/`qty_per_order_unit`（叫貨單位）、`safety_stock` |
-| `menu_item` | `is_active`（軟刪除）、`price` |
-| `recipe` | `ingredient_name`（FK → ingredient.name）、`consume_qty`（每份消耗量） |
-| `"order"` | `status`（**待製作/製作中/待付款/已完成/已取消**）、`order_id`、`order_date` |
-| `order_item` | **`unit_price`（單價快照）**、`quantity` |
-| `delivery_customer` | `phone`（PK）、`house_number`、`address`、`name` |
-| `purchase_order` | `po_id`（PK）、`supplier_name`（FK）、**`total_amount`**（總金額，驗貨後回填）|
-| `purchase_order_item` | `(po_id, ingredient_name)` **複合 PK**、外鍵參考 purchase_order |
-| `return_order` | `(po_id, ingredient_name)` **複合 PK、複合 FK** 參考 purchase_order_item |
-
-### 5.6 ERD ↔ Schema 對應表
-
-| PDF ERD 實體/關係 | 對應 SQL Table | PK |
-|-----------------|--------------|-----|
-| 1. 顧客訂單 | `"order"` | order_id |
-| 2. 顧客訂單-包含 | `order_item` | (order_id, item_id) |
-| 3. 餐點 | `menu_item` | item_id |
-| 4. 供應商 | `supplier` | **name** |
-| 5. 食材 | `ingredient` | **name** |
-| 6. 食材-消耗 | `recipe` | (item_id, ingredient_name) |
-| 7. 進貨單 | `purchase_order` | po_id |
-| 8. 進貨單明細 | `purchase_order_item` | (po_id, ingredient_name) |
-| 9. 退貨單 | `return_order` | (po_id, ingredient_name) |
-| 10. 外送顧客單 | `delivery_customer` | phone |
-
-**完全對齊 PDF 第柒節 10 個 relation，無實作輔助表。**
-
-### 5.7 Migration 流程
-
-```bash
-# ⚠️ v3 需砍掉舊 DB 重建（PK 從 ID 改名稱，無法 migration）
-rm -f data/jinhaoker.db
-
-# 初始化
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
-
-# 驗證
-sqlite3 data/jinhaoker.db ".tables"
-```
-
-### 5.8 SQL 語法要點
-
-```sql
--- 時間一律用 +8 小時（SQLite 沒有時區）
-INSERT INTO "order" (order_id, order_date, status, customer_phone)
-VALUES (?, ?, '待製作', ?)
-
--- 保留字 table 名要加雙引號
-SELECT * FROM "order" WHERE order_id = ?
-
--- Transaction 範例一：建立訂單（★ 不扣庫存，出餐才扣）
-BEGIN;
-  -- 1. 外送顧客（若有電話）
-  INSERT OR IGNORE INTO delivery_customer (phone) VALUES (?);
-
-  -- 2. 寫入訂單主表
-  INSERT INTO "order" (order_id, order_date, status, customer_phone)
-  VALUES (?, ?, '待製作', ?);
-
-  -- 3. 寫入明細 + 單價快照（★ 不扣庫存）
-  INSERT INTO order_item (order_id, item_id, quantity, unit_price)
-  SELECT ?, ?, ?, price FROM menu_item WHERE item_id = ?;
-COMMIT;
-
--- Transaction 範例二：出餐完成（★ 此時才扣庫存）
-BEGIN;
-  -- 依據 recipe 扣庫存
-  UPDATE ingredient
-  SET stock_qty = stock_qty - (
-    SELECT SUM(r.consume_qty * oi.quantity)
-    FROM order_item oi
-    JOIN recipe r ON oi.item_id = r.item_id
-    WHERE oi.order_id = ? AND r.ingredient_name = ingredient.name
-  )
-  WHERE name IN (SELECT ingredient_name FROM recipe WHERE item_id IN (SELECT item_id FROM order_item WHERE order_id = ?));
-
-  -- 更新訂單狀態
-  UPDATE "order" SET status = '已完成', updated_at = datetime('now', '+8 hours')
-  WHERE order_id = ?;
-COMMIT;
-
--- Transaction 範例三：驗貨（合格入庫、不合格退貨、回填 total_amount）
-BEGIN;
-  -- 1. 合格數量入庫
-  UPDATE ingredient SET stock_qty = stock_qty + ?
-  WHERE name = ?;
-
-  -- 2. 回填 purchase_order_item 的 total_cost
-  UPDATE purchase_order_item SET total_cost = ? * ?
-  WHERE po_id = ? AND ingredient_name = ?;
-
-  -- 3. 回填主表 total_amount
-  UPDATE purchase_order SET total_amount = (
-    SELECT SUM(total_cost) FROM purchase_order_item WHERE po_id = ?
-  ), status = '已驗貨'
-  WHERE po_id = ?;
-
-  -- 4. 不合格才建立退貨單
-  INSERT INTO return_order (po_id, ingredient_name, return_date, return_reason, return_qty)
-  SELECT ?, ?, datetime('now', '+8 hours'), ?, ?
-   WHERE ? > 0;
-COMMIT;
-```
-
-### 5.9 進貨單主表 + 明細表結構
-
-**主表 `purchase_order`：**
-| 欄位 | 說明 |
-|------|------|
-| `po_id` | 主鍵，AUTOINCREMENT |
-| `po_date` | 進貨單日期 |
-| `supplier_name` | FK → supplier.name |
-| `total_amount` | **驗貨後回填的總金額（免 JOIN）** |
-| `status` | 已訂購 / 已驗貨 / 部分退貨 |
-
-**明細表 `purchase_order_item`：**
-| 欄位 | 說明 |
-|------|------|
-| `po_id` | FK → purchase_order.po_id |
-| `ingredient_name` | FK → ingredient.name |
-| `order_qty` | 進貨數量（計量單位） |
-| `total_cost` | 合格數量 × 單價（驗貨後回填） |
-| **PK** | `(po_id, ingredient_name)` 複合主鍵 |
-
-**退貨單 `return_order`** 複合 FK 參考 `purchase_order_item(po_id, ingredient_name)`，確保退貨只針對有訂購的食材。
+1. **食材/供應商 PK 用 name**（不是 ID），減少 JOIN
+2. **進貨單拆成主表 + 明細**（2NF）
+3. **order_item 存單價快照**，漲價不影響歷史訂單
+4. **庫存在出餐時扣除**（PATCH `/api/orders/status` → `done`），不是下單時
+5. **叫貨單位設計**：`order_unit`（叫貨箱/包）× `qty_per_order_unit`（每單位等於多少 stock_unit）
 
 ---
 
-## 6. API 開發規範
+## API 開發規範
 
-> 所有 API Route 在 `app/api/` 底下，用 TypeScript 撰寫。
-> 詳細範例見 [docs/menu-api-example.md](docs/menu-api-example.md)（含完整 Menu API TypeScript 程式碼）
-
-### 6.1 統一回傳格式
+### 統一回應格式
 
 ```typescript
-// ✅ 成功
+// 成功
 { "success": true, "data": { ... } }
-
-// ❌ 失敗
-{ "success": false, "error": "錯誤原因" }
+// 失敗
+{ "success": false, "error": "錯誤說明" }
 ```
 
-### 6.2 HTTP Status Code
+### HTTP Status
 
 | Status | 意義 |
 |--------|------|
-| 200 | 查詢/更新成功 |
-| 201 | 建立成功 |
-| 400 | 參數錯誤（缺少必填欄位） |
+| 200 | 查詢/修改成功 |
+| 201 | 新增成功 |
+| 400 | 參數錯誤 |
 | 404 | 找不到資源 |
-| 500 | 伺服器錯誤（try-catch 捕捉） |
+| 500 | 伺服器錯誤 |
 
-### 6.3 必備區塊（每個 Route Handler 都要有）
+### 必備區塊（每支 API 都要有）
 
 ```typescript
-export async function GET(req: Request) {
+export async function GET(req) {
   try {
     // 1. 取得參數（query / params）
     // 2. 驗證參數
     // 3. 操作資料庫
     // 4. 回傳結果
     return NextResponse.json({ success: true, data: ... })
-  } catch (err: unknown) {
+  } catch (err) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
       { status: 500 }
@@ -455,446 +161,115 @@ export async function GET(req: Request) {
 }
 ```
 
-### 6.4 訂單狀態流（v3）
+---
 
-```
-待製作 → 製作中 → 待付款 → 已完成
-    ↑                      ↓
-    └────── 已取消 ←────────┘
-```
+## API 列表（26支）
 
-> **庫存扣除時機：** 只有 `PATCH /api/orders/:id/complete`（出餐完成）才會扣庫存。
-> **修改訂單：** 保留 order_id，只重建 order_item（狀態需為「待製作」）。
+| # | 方法 | 路由 | 說明 | 狀態 |
+|---|------|------|------|------|
+| 1 | GET | `/api/menu` | 查詢全部菜單（可 filter by category） | ✅ |
+| 2 | POST | `/api/menu` | 新增品項 | ✅ |
+| 3 | GET | `/api/menu/:id` | 查詢單一品項 | ✅ |
+| 4 | PUT | `/api/menu/:id` | 修改品項 | ✅ |
+| 5 | DELETE | `/api/menu/:id` | 軟刪除品項 | ✅ |
+| 6 | GET | `/api/orders` | 查詢全部訂單 | ✅ |
+| 7 | POST | `/api/orders` | 新增訂單 | ✅ |
+| 8 | PATCH | `/api/orders/status` | 更新訂單狀態 | ✅ |
+| 9 | DELETE | `/api/orders/:id` | 取消訂單 | ❌ |
+| 10 | GET | `/api/inventory` | 查詢庫存 | ❌ |
+| 11 | PUT | `/api/inventory/:name` | 調整庫存 | ❌ |
+| 12 | GET | `/api/purchase-orders` | 查詢進貨單 | ❌ |
+| 13 | POST | `/api/purchase-orders` | 新建進貨單 | ❌ |
+| 14 | POST | `/api/orders/auto-restock` | 一鍵補貨 | ❌ |
+| 15 | POST | `/api/purchase-orders/:id/receive` | 驗貨入庫 | ❌ |
+| 16 | POST | `/api/purchase-orders/:id/return` | 登錄退貨 | ❌ |
+| 17 | GET | `/api/suppliers` | 查詢供應商 | ❌ |
+| 18 | POST | `/api/suppliers` | 新增供應商 | ❌ |
+| 19 | PUT | `/api/suppliers/:name` | 修改供應商 | ❌ |
+| 20 | DELETE | `/api/suppliers/:name` | 刪除供應商 | ❌ |
+| 21 | GET | `/api/ingredients` | 查詢食材 | ❌ |
+| 22 | POST | `/api/ingredients` | 新增食材 | ❌ |
+| 23 | PUT | `/api/ingredients/:name` | 修改食材 | ❌ |
+| 24 | DELETE | `/api/ingredients/:name` | 刪除食材 | ❌ |
+| 25 | GET | `/api/reports/daily` | 每日營收 | ❌ |
+| 26 | GET | `/api/reports/monthly` | 月營收 | ❌ |
 
-### 6.5 API 路由對照表
-
-| 功能 | HTTP Method | 路由 |
-|------|-------------|------|
-| 查詢全部菜單 | GET | `/api/menu` |
-| 新增菜單 | POST | `/api/menu` |
-| 查詢單一菜單 | GET | `/api/menu/:id` |
-| 更新菜單 | PUT | `/api/menu/:id` |
-| 刪除菜單（軟刪除） | DELETE | `/api/menu/:id` |
-| 查詢分類 | GET | `/api/menu/categories` |
-| 查詢全部訂單 | GET | `/api/orders` |
-| 建立訂單 | POST | `/api/orders` |
-| 查詢單一訂單 | GET | `/api/orders/:id` |
-| 修改訂單（★ 保留編號） | PUT | `/api/orders/:id` |
-| **出餐完成（★ 扣庫存）** | PATCH | `/api/orders/:id/complete` |
-| 儀表板統計 | GET | `/api/orders/stats` |
-| 查詢庫存（含叫貨單位） | GET | `/api/inventory` |
-| 低庫存警示 | GET | `/api/inventory/check` |
-| 更新庫存 | PUT | `/api/inventory/:id` |
-| 新增食材 | POST | `/api/inventory` |
-| **一鍵補貨（選項A）** | POST | `/api/purchase-orders/auto-restock` |
-| 查詢採購單 | GET | `/api/purchase-orders` |
-| 建立採購單 | POST | `/api/purchase-orders` |
-| 查詢採購單明細 | GET | `/api/purchase-orders/:id` |
-| **驗貨（★ 回填 total_amount）** | POST | `/api/purchase-orders/:id/receive` |
-| 查詢供應商 | GET | `/api/suppliers` |
-| 新增供應商 | POST | `/api/suppliers` |
-| 更新供應商 | PUT | `/api/suppliers/:id` |
-
-### 6.6 Request / Response 範例
-
-#### POST /api/orders（建立訂單，★ 不扣庫存）
-
-**Request：**
-```json
-POST /api/orders
-Content-Type: application/json
-
-{
-  "customer_phone": "0912-345-678",
-  "items": [
-    { "item_id": 1, "quantity": 2 }
-  ]
-}
-```
-
-**Response（成功）：**
-```json
-HTTP 201
-{ "success": true, "data": { "order_id": "202605220001" } }
-```
-
-> **說明：** 不傳 `customer_name`，改由 `customer_phone` 關聯到 `delivery_customer`。
-
-#### PATCH /api/orders/:id/complete（出餐完成，★ 此時才扣庫存）
-
-**Request：**
-```json
-PATCH /api/orders/:id/complete
-```
-
-**Response（成功）：**
-```json
-{ "success": true }
-```
-
-> **行為：** 根據 `order_item` 查 `recipe`，逐筆扣 `ingredient.stock_qty`，再將訂單 status 改為「已完成」。
-
-#### POST /api/purchase-orders/auto-restock（一鍵補貨，選項 A）
-
-**Request：**
-```json
-POST /api/purchase-orders/auto-restock
-```
-
-**Response（成功）：**
-```json
-{
-  "success": true,
-  "data": {
-    "purchase_orders": [
-      { "po_id": 1, "supplier_name": "肉品大王", "items": ["排骨", "雞腿"] },
-      { "po_id": 2, "supplier_name": "蔬果行", "items": ["高麗菜"] }
-    ]
-  }
-}
-```
-
-> **行為：** 找出所有低於安全量的食材，依供應商分組，每食材叫 1 個 `order_unit`（=`qty_per_order_unit` 個計量單位）。
-
-#### POST /api/purchase-orders/:id/receive（驗貨）
-
-**Request：**
-```json
-POST /api/purchase-orders/123/receive
-Content-Type: application/json
-
-{
-  "items": [
-    { "ingredient_name": "排骨", "received_qty": 65, "qualified_qty": 63, "unit_price": 150, "reject_reason": "" },
-    { "ingredient_name": "雞腿", "received_qty": 15, "qualified_qty": 12, "unit_price": 120, "reject_reason": "2 支外觀不良" }
-  ]
-}
-```
-
-**Response（成功）：**
-```json
-{ "success": true, "data": { "total_amount": 10890, "status": "部分退貨" } }
-```
-
-> **行為：** 合格數量入庫、不合格寫退貨單、回填 `purchase_order_item.total_cost`、彙總 `purchase_order.total_amount`。
+> ✅ = 已實作　❌ = 待實作
 
 ---
 
-## 7. 前端開發規範
+## 分工建議
 
-### 7.1 語言與框架
+| 層 | 負責人 | 目前進度 |
+|---|--------|---------|
+| SQL | 確定 | ✅ 完成（10張表） |
+| API（✅ 5支） | 確定 | 組員認領 ❌ 21支 |
+| 前台 | 你 | ✅ 串 API 完成 |
+| 後台 | 組員 | 部分完成（訂單看板 ✅）|
+| 啟動腳本 | 待補 | 待補 |
 
-- **Framework**：Next.js 14 App Router
-- **UI 語言**：JavaScript（`page.jsx` / `layout.jsx`）
-- **元件庫**：Lucide React（圖示）+ Tailwind CSS（樣式）
-- **圖表**：Recharts（儀表板用）
-
-### 7.2 前台（顧客）— `app/page.jsx`
-
-**功能：** 瀏覽 → 加入購物車 → 填資料 → 提交訂單
-
-**呼叫的 API：**
-- `GET /api/menu`
-- `GET /api/menu/categories`
-- `POST /api/orders`
-
-**流程：**
-```
-fetch('/api/menu') → 顯示菜單 Grid
-→ 點「加入購物車」→ useState cart[]
-→ 填 customer_name → POST /api/orders
-→ 成功 → alert('單號：xxx')、清空 cart
-```
-
-### 7.3 後台（管理員）— `app/admin/*`
-
-**目錄結構：**
-- `dashboard/page.jsx` — 儀表板（4 格統計 + 3 張圖表）
-- `menu/page.jsx` — 菜單 CRUD（Modal 表單）
-- `orders/page.jsx` — 訂單狀態管理（狀態按鈕）
-- `inventory/page.jsx` — 庫存查詢與調整
-
-**共用的 Layout：** `components/layout/AdminLayout.jsx`（左側 Sidebar）
-
-### 7.4 前端資料處理原則
-
-```javascript
-// ✅ 正確：直接取用 API 回傳的欄位名
-data.map(item => item.item_id, item.name, item.price)
-
-// ❌ 錯誤：自己定義新的欄位名對接
-```
-
-### 7.5 錯誤處理
-
-```javascript
-try {
-  const res = await fetch('/api/menu')
-  const result = await res.json()
-  if (result.success) {
-    setMenu(result.data)
-  } else {
-    alert('載入失敗：' + result.error)
-  }
-} catch (err) {
-  alert('網路錯誤：' + err.message)
-}
-```
+### 協作原則
+- **各層独立開發**，上一層串下一層的 API，不直接碰其他層的 code
+- **API 格式必須符合** `api-reference.md`，組員實作前先看這份文件
+- **HTTP 方法**看 `api-guide.md`
+- **Schema 欄位**看 `docs/schema-reference.md`
 
 ---
 
-## 8. 整合測試
+## 環境建置
 
-### 8.1 curl 測試 API
+### Windows（建議）
 
-```bash
-# 健康檢查
-curl http://localhost:3100/api/health
+```powershell
+# 1. 確認 Node.js
+node -v    # 需要 v20.x
+npm -v     # 需要 10.x.x
 
-# 查詢全部菜單
-curl http://localhost:3100/api/menu
-
-# 新增菜單
-curl -X POST http://localhost:3100/api/menu \
-  -H "Content-Type: application/json" \
-  -d '{"name":"測試餐點","category":"主餐","price":99}'
-
-# 建立訂單
-curl -X POST http://localhost:3100/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_name":"測試","items":[{"item_id":1,"quantity":1}]}'
-
-# 更新訂單狀態
-curl -X PATCH http://localhost:3100/api/orders/202605160001/status \
-  -H "Content-Type: application/json" \
-  -d '{"status":"completed"}'
-```
-
-### 8.2 前後端串接檢查清單
-
-- [ ] 前台首頁有辦法 fetch 到 `/api/menu` 並顯示
-- [ ] 提交訂單後 cart 清空、出現 alert 單號
-- [ ] 後台 `/admin/orders` 可以看到訂單
-- [ ] 後台更新狀態後、視圖即時刷新
-- [ ] 低庫存品項在後台有不同顏色標示
-- [ ] 儀表板統計數字有正常顯示（非 0 或 loading 持續很久）
-
----
-
-## 9. Git 協作規範
-
-> ⚠️ 正式協作 repo：`https://github.com/Chuannnn1/jinhaoker`
-> ⚠️ 請先看過以下影片了解 Git 分支與 merge 流程：
-> [【教程】Git Collaborative Development — YouTube](https://youtu.be/P-nbNgIzlYE?si=vF2JQ8Wfq0wyJHyv)
-
-### 9.1 分支策略
-
-```
-main           ← 正式版（只有 repo 擁有者能 merge）
-├── dev        ← 開發整合分支（所有人往這 PR）
-└── feature/*  ← 各組員的功能分支
-```
-
-### 9.2 Merge 流程
-
-```
-組員在 feature/xxx 開發
-        ↓
-提交 PR → chaeryeong review → 標註問題或通過
-        ↓
-組長 merge 到 dev → 確認沒 conflict
-        ↓
-組長 merge dev → main
-```
-
-### 9.3 團隊分工
-
-| 組員 | 負責範圍 |
-| chuannnn | 前台點餐頁 + 後台全部 UI + SQL schema + Menu API |
-| 組員 2 | Orders 全套 API（5 個 endpoint）+ Orders 相關前端 |
-| 組員 3 | Inventory + Purchase Orders + Suppliers 全套 API |
-
-### 9.4 交接注意事項
-
-- **API 確定好格式再動手**：先討論好 request / response 格式，確認雙方都理解再分工
-- **DB schema 有變動要通知全組**：任何 SQL 改動第一時間在群組公告
-- **每天 pull 最新程式碼**：避免 merge conflict 堆積
-- **PR 審核**：所有 PR 皆由 chaeryeong（agent）先行 review，再由組長 merge
-
----
-
-## 10. 開始實作
-
-### 10.1 初次環境建置
-
-> 📖 詳細圖文教學（從零 init Next.js）：[docs/getting-started.md](docs/getting-started.md)
-
-```bash
-# 1. Clone 協作 repo
-git clone git@github.com:Chuannnn1/jinhaoke.git
+# 2. Clone 並安裝依賴
+git clone https://github.com/Chuannnn1/jinhaoke.git
 cd jinhaoke
-
-# 2. 安裝 Node.js 20.x（如尚未安裝）
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-
-# 3. 安裝 npm 依賴
 npm install
 
-# 4. 安裝 SQLite（Linux）
-apt-get install -y sqlite3
-
-# 5. 初始化資料庫
-mkdir -p data
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
-
-# 6. 啟動開發伺服器
+# 3. 啟動開發伺服器
 npm run dev
-# 出現  => Ready  之後，開啟 http://localhost:3100
+# 開啟 http://localhost:3000
 ```
 
-### 10.2 每日開發流程
+> 第一次啟動時，`lib/db.ts` 會自動執行 `schema.sql` + `seed.sql`，不需手動 init 資料庫。
+
+### WSL
 
 ```bash
-# 每次開始前：拉最新程式碼
-git checkout dev
-git pull origin dev
-
-# 建立自己的功能分支（名稱範例）
-git checkout -b feature/menu-api       # chuannnn：menu API
-git checkout -b feature/orders-api     # 組員2：orders API
-git checkout -b feature/inventory-api # 組員3：inventory API
-
-# 開發、 commit、 push
-git add .
-git commit -m "feat: add menu GET API"
-git push origin feature/menu-api
-
-# 在 GitHub 網頁發 PR → 等待 review → merge
-```
-
-### 10.3 快速測試 API（不開瀏覽器）
-
-```bash
-# 測試 Menu API
-curl http://localhost:3100/api/menu
-
-# 新增品項
-curl -X POST http://localhost:3100/api/menu \
-  -H "Content-Type: application/json" \
-  -d '{"name":"牛肉麵","category":"主食","price":120}'
-
-# 測試 Orders API
-curl -X POST http://localhost:3100/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customer_name":"王小明","customer_phone":"0912-345-678","items":[{"item_id":1,"quantity":2}]}'
-
-# 查看訂單列表
-curl http://localhost:3100/api/orders
-
-# 查看庫存
-curl http://localhost:3100/api/inventory
-```
-
-### 10.4 常見問題
-
-| 問題 | 解法 |
-|------|------|
-| `better-sqlite3` 安裝失敗 | `npm install --build-from-source better-sqlite3` |
-| 資料庫權限錯誤 | `chmod 666 data/jinhaoker.db` 或用 `sudo` 執行 init |
-| `npm run dev` 沒反應 | 確認 `.env.local` 存在（參考 `.env.example`） |
-| Port 3100 被佔用 | `lsof -ti:3100 | xargs kill -9` 然後重跑 |
-
----
-
-
-
-
-### 11.1 必要檔案
-
-```
-jinhaoker-pos/
-├── app/                    ← 前台 + 後台（全部完整）
-├── lib/
-│   ├── schema.sql          ← 9張表 DDL
-│   ├── seed.sql            ← 測試資料
-│   └── db.ts               ← 資料庫連線
-├── scripts/
-│   └── setup.sh            ← 一鍵部署腳本
-├── docs/
-│   ├── API-GUIDE.md        ← API 撰寫規範
-│   └── README.md           ← 本文件（專案說明書）
-└── package.json
-```
-
-### 11.2 系統驗收標準
-
-- [ ] 前台可以瀏覽菜單、加入購物車、提交訂單
-- [ ] 後台可以管理菜單（CRUD）
-- [ ] 後台可以查看訂單列表並更新狀態
-- [ ] 後台可以查詢庫存並調整
-- [ ] 儀表板顯示今日訂單數、營收統計圖表
-- [ ] 所有 API 皆為 `{ success: true/false, data/error }` 格式
-- [ ] 部署腳本可在乾淨的 VPS 上一次性架設完成
-- [ ] 系統可透過 Tailscale Funnel URL 公開訪問
-
----
-
-## 附錄 A：setup.sh
-
-```bash
-#!/bin/bash
-set -e
-
-echo "=== 金濠客食堂 POS 安裝腳本 ==="
-
-# 1. 更新系統、安裝 Node.js 20.x
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-
-# 2. 安裝 npm 依賴
+cd ~/jinhaoke/jinhaoke
 npm install
-
-# 3. 安裝 Tailscale
-curl -fsSL https://tailscale.com/install.sh | sh
-
-# 4. 初始化資料庫
-mkdir -p data
-sqlite3 data/jinhaoker.db < lib/schema.sql
-sqlite3 data/jinhaoker.db < lib/seed.sql
-
-# 5. 啟動 Tailscale（需要手動登入一次）
-tailscale up
-
-# 6. 啟用 Funnel（對外暴露 3100 port）
-tailscale funnel 3100
-
-# 7. 啟動 Next.js
-npm start &
-
-echo "=== 安裝完成 ==="
-echo "請存取：$(tailscale funnel status | grep https)"
+npm run dev
 ```
-
-> ⚠️ 實際部署時 `setup.sh` 需要更嚴謹的 error handling、firewall 設定、以及 Tailscale auth key 非互動式登入流程。
 
 ---
 
-## 附錄 B：API 快速對照
+## 常用指令
 
-> 完整 request/response 文件見 `docs/jinhaoker-pos-api-demo.md`
+```bash
+# 開發
+npm run dev          # 開發模式（熱重載）
+npm run build        # 建置 Production 版
+npm start            # 啟動 Production 版
 
-| Method | 路由 | 說明 |
-|--------|------|------|
-| GET | `/api/health` | 健康檢查 |
-| GET | `/api/menu` | 查詢全部菜單 |
-| GET | `/api/menu/categories` | 分類統計 |
-| GET | `/api/orders` | 查詢訂單列表 |
-| POST | `/api/orders` | 建立訂單（Transaction） |
-| PATCH | `/api/orders/:id/status` | 更新訂單狀態 |
-## 11. 繳交成品規格
-| GET | `/api/inventory` | 查詢庫存 |
-| GET | `/api/inventory/check` | 低庫存警示 |
-| PUT | `/api/inventory/:id` | 更新庫存數量 |
-| GET | `/api/suppliers` | 查詢供應商 |
+# Git
+git status           # 查看變更
+git add .            # 暫存變更
+git commit -m "..."  # 提交
+git push             # 推送到 GitHub
+git pull             # 拉取並合併
+```
+
+---
+
+## 缴交成品規格（預定）
+
+- ✅ 前台：顧客觸控點餐、購物車、訂單送出
+- ✅ 後台：訂單看板、狀態拖曳更新
+- ❌ 後台：菜單 CRUD、庫存管理、供應商管理
+- ❌ 報表：每日/月營收
+- ❌ 庫存：自動扣庫存（出餐時）、一鍵補貨
+- ❌ 部署：VPS + Tailscale Funnel
