@@ -273,3 +273,14 @@ git pull             # 拉取並合併
 - ❌ 報表：每日/月營收
 - ❌ 庫存：自動扣庫存（出餐時）、一鍵補貨
 - ❌ 部署：VPS + Tailscale Funnel
+
+---
+
+## 組員文件索引
+
+| 文件 | 用途 |
+|------|------|
+| [docs/README.md](docs/README.md) | 1. 檔案架構（當前完整目錄樹） |
+| [docs/api-reference.md](docs/api-reference.md) | 2. 全部 26 支 API 的 request / response 格式 |
+| [docs/api-guide.md](docs/api-guide.md) | 3. GET / POST / PUT / PATCH / DELETE 差異說明 + 10點實作檢查清單 |
+| [docs/schema-reference.md](docs/schema-reference.md) | 4. Schema v3 完整規劃（10張表欄位說明 + 未來系統藍圖）|
