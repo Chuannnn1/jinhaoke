@@ -1,44 +1,41 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 // ============================================================
-// 金濠客食堂 真實菜單
+// 金濠客食堂 前台點餐頁
 // ============================================================
-const MOCK_MENU = [
-  // --- 手作便當（含三樣配菜）---
-  { item_id: 101, name: '大比目魚排便當', sub: '扁鱈', category: '手作便當', tag: '魚', price: 130, emoji: '🐟' },
-  { item_id: 102, name: '酥炸豬排便當', category: '手作便當', tag: '豬', price: 130, emoji: '🐷' },
-  { item_id: 103, name: '酥嫩雞腿便當', category: '手作便當', tag: '雞', price: 130, emoji: '🍗' },
-  { item_id: 104, name: '紅麴豬五花便當', category: '手作便當', tag: '豬', price: 120, emoji: '🐷' },
-  { item_id: 105, name: '酥炸排骨便當', sub: '無骨', category: '手作便當', tag: '豬', price: 100, emoji: '🐷' },
-  { item_id: 106, name: '滷豬腳便當', category: '手作便當', tag: '豬', price: 100, emoji: '🐷' },
-  { item_id: 107, name: '滷雞腿便當', category: '手作便當', tag: '雞', price: 100, emoji: '🍗' },
-  { item_id: 108, name: '滷排骨便當', sub: '帶骨·附滷蛋', category: '手作便當', tag: '豬', price: 100, emoji: '🥚' },
-
-  // --- 燴飯 ---
-  { item_id: 201, name: '沙茶牛肉燴飯', category: '燴飯', tag: '牛', price: 110, emoji: '🥩', option: '加肉60 / 加菜10' },
-  { item_id: 202, name: '沙茶雞柳燴飯', category: '燴飯', tag: '雞', price: 110, emoji: '🍗', option: '加肉60 / 加菜10' },
-  { item_id: 203, name: '沙茶豬肉燴飯', category: '燴飯', tag: '豬', price: 100, emoji: '🐷', option: '加肉50 / 加菜10' },
-
-  // --- 單點 ---
-  { item_id: 301, name: '大比目魚排', sub: '扁鱈', category: '單點', tag: '魚', price: 100, emoji: '🐟' },
-  { item_id: 302, name: '酥炸豬排', category: '單點', tag: '豬', price: 100, emoji: '🐷' },
-  { item_id: 303, name: '酥嫩雞腿', category: '單點', tag: '雞', price: 100, emoji: '🍗' },
-  { item_id: 304, name: '紅麴豬五花', category: '單點', tag: '豬', price: 90, emoji: '🐷' },
-  { item_id: 305, name: '沙茶燴牛肉', category: '單點', tag: '牛', price: 90, emoji: '🥩', option: '加肉60 / 加菜10' },
-  { item_id: 306, name: '滷排骨', sub: '二片', category: '單點', tag: '豬', price: 80, emoji: '🐷' },
-  { item_id: 307, name: '沙茶燴豬肉', category: '單點', tag: '豬', price: 80, emoji: '🐷', option: '加肉50 / 加菜10' },
-  { item_id: 308, name: '酥炸排骨', sub: '無骨', category: '單點', tag: '豬', price: 70, emoji: '🐷' },
-  { item_id: 309, name: '滷雞腿', category: '單點', tag: '雞', price: 70, emoji: '🍗' },
-  { item_id: 310, name: '季節炒時蔬', category: '單點', tag: '其他', price: 60, emoji: '🥬' },
-  { item_id: 311, name: '白飯', category: '單點', tag: '其他', price: 20, emoji: '🍚' },
-  { item_id: 312, name: '滷蛋', category: '單點', tag: '其他', price: 15, emoji: '🥚' },
-  { item_id: 313, name: '加購湯品', category: '單點', tag: '其他', price: 10, emoji: '🍜' },
-  { item_id: 314, name: '加購菜脯', sub: '原味/辣味', category: '單點', tag: '其他', price: 5, emoji: '🥢' },
-]
-
 // 食材分類標籤
 const PROTEIN_TAGS = ['全部', '豬', '雞', '牛', '魚', '其他']
+
+// 當 API 無法取得時的 fallback（MOCK_MENU item_id 與 DB 不符，訂單會壞
+// 這只是避免 UI 完全炸掉，應該確保 API 正常）
+const FALLBACK_MENU = [
+  { item_id: 1,  name: '大比目魚排便當', sub: '扁鱈', category: '手作便當', tag: '魚',   price: 130, emoji: '🐟' },
+  { item_id: 2,  name: '酥炸豬排便當',   category: '手作便當', tag: '豬',   price: 130, emoji: '🐷' },
+  { item_id: 3,  name: '酥嫩雞腿便當',   category: '手作便當', tag: '雞',   price: 130, emoji: '🍗' },
+  { item_id: 4,  name: '紅麴豬五花便當', category: '手作便當', tag: '豬',   price: 120, emoji: '🐷' },
+  { item_id: 5,  name: '酥炸排骨便當',   sub: '無骨',  category: '手作便當', tag: '豬',   price: 100, emoji: '🐷' },
+  { item_id: 6,  name: '滷豬腳便當',     category: '手作便當', tag: '豬',   price: 100, emoji: '🐷' },
+  { item_id: 7,  name: '滷雞腿便當',     category: '手作便當', tag: '雞',   price: 100, emoji: '🍗' },
+  { item_id: 8,  name: '滷排骨便當',     sub: '帶骨·附滷蛋', category: '手作便當', tag: '豬', price: 100, emoji: '🥚' },
+  { item_id: 9,  name: '沙茶牛肉燴飯',   category: '燴飯',     tag: '牛',   price: 110, emoji: '🥩', option: '加肉60 / 加菜10' },
+  { item_id: 10, name: '沙茶雞柳燴飯',   category: '燴飯',     tag: '雞',   price: 110, emoji: '🍗', option: '加肉60 / 加菜10' },
+  { item_id: 11, name: '沙茶豬肉燴飯',   category: '燴飯',     tag: '豬',   price: 100, emoji: '🐷', option: '加肉50 / 加菜10' },
+  { item_id: 14, name: '大比目魚排',     sub: '扁鱈',  category: '單點',    tag: '魚',   price: 100, emoji: '🐟' },
+  { item_id: 15, name: '酥炸豬排',       category: '單點',    tag: '豬',   price: 100, emoji: '🐷' },
+  { item_id: 16, name: '酥嫩雞腿',       category: '單點',    tag: '雞',   price: 100, emoji: '🍗' },
+  { item_id: 17, name: '紅麴豬五花',     category: '單點',    tag: '豬',   price: 90,  emoji: '🐷' },
+  { item_id: 18, name: '沙茶燴牛肉',     category: '單點',    tag: '牛',   price: 90,  emoji: '🥩', option: '加肉60 / 加菜10' },
+  { item_id: 19, name: '滷排骨',         sub: '二片',  category: '單點',    tag: '豬',   price: 80,  emoji: '🐷' },
+  { item_id: 20, name: '沙茶燴豬肉',     category: '單點',    tag: '豬',   price: 80,  emoji: '🐷', option: '加肉50 / 加菜10' },
+  { item_id: 21, name: '酥炸排骨',         sub: '無骨',  category: '單點',    tag: '豬',   price: 70,  emoji: '🐷' },
+  { item_id: 22, name: '滷雞腿',         category: '單點',    tag: '雞',   price: 70,  emoji: '🍗' },
+  { item_id: 23, name: '季節炒時蔬',     category: '單點',    tag: '其他', price: 60,  emoji: '🥬' },
+  { item_id: 24, name: '白飯',           category: '單點',    tag: '其他', price: 20,  emoji: '🍚' },
+  { item_id: 25, name: '滷蛋',           category: '單點',    tag: '其他', price: 15,  emoji: '🥚' },
+  { item_id: 26, name: '加購湯品',       category: '單點',    tag: '其他', price: 10,  emoji: '🍜' },
+  { item_id: 27, name: '加購菜脯',         sub: '原味/辣味', category: '單點', tag: '其他', price: 5,  emoji: '🥢' },
+]
 
 // ============================================================
 // 主元件
@@ -46,6 +43,9 @@ const PROTEIN_TAGS = ['全部', '豬', '雞', '牛', '魚', '其他']
 export default function CustomerOrderPage() {
 
   // ---- State ----
+  const [menu, setMenu] = useState([])
+  const [menuLoading, setMenuLoading] = useState(true)
+  const [menuError, setMenuError] = useState(null)
   const [activeTag, setActiveTag] = useState('全部')
   const [cart, setCart] = useState([])
   const [cartOpen, setCartOpen] = useState(false)
@@ -53,10 +53,30 @@ export default function CustomerOrderPage() {
   const [orderDone, setOrderDone] = useState(false)
   const [justOrdered, setJustOrdered] = useState(null)
 
+  // ---- 抓 API 取得真實 item_id ----
+  useEffect(() => {
+    fetch('/api/menu')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data.length > 0) {
+          setMenu(data.data)
+        } else {
+          // API 回成功但沒資料，使用 fallback
+          setMenu(FALLBACK_MENU)
+        }
+        setMenuLoading(false)
+      })
+      .catch(err => {
+        console.error('無法取得菜單，使用 fallback：', err)
+        setMenu(FALLBACK_MENU)
+        setMenuLoading(false)
+      })
+  }, [])
+
   // ---- 衍生資料 ----
   const filteredMenu = activeTag === '全部'
-    ? MOCK_MENU
-    : MOCK_MENU.filter(item => item.tag === activeTag)
+    ? menu
+    : menu.filter(item => item.tag === activeTag)
 
   // ---- 函式 ----
   const addToCart = (item) => {
@@ -69,9 +89,20 @@ export default function CustomerOrderPage() {
             : i
         )
       }
-      return [...prev, { ...item, quantity: 1 }]
+      // 存完整品項（item_id 是 DB 真實的，不是 MOCK 的）
+      return [...prev, {
+        item_id: item.item_id,
+        name: item.name,
+        price: item.price,
+        emoji: item.emoji,
+        sub: item.sub || '',
+        option: item.option || '',
+        category: item.category,
+        tag: item.tag,
+        quantity: 1,
+      }]
     })
-    setCartOpen(true)  // 加東西時自動開 cart
+    setCartOpen(true)
   }
 
   const removeFromCart = (itemId) => {
@@ -97,6 +128,7 @@ export default function CustomerOrderPage() {
       customer_name: '現場顧客',
       customer_phone: '',
       note: customerNote,
+      // POST 使用真實的 DB item_id
       items: cart.map(i => ({ item_id: i.item_id, quantity: i.quantity })),
     }
 
@@ -190,8 +222,15 @@ export default function CustomerOrderPage() {
         {/* ---- Content ---- */}
         <main className="flex-1 overflow-auto p-8 bg-gold-50">
 
+          {/* 載入中 */}
+          {menuLoading && (
+            <div className="flex items-center justify-center h-64">
+              <p className="text-charcoal-900/30">載入菜單中…</p>
+            </div>
+          )}
+
           {/* 類別區塊 */}
-          {['手作便當', '燴飯', '單點'].map(cat => {
+          {!menuLoading && ['手作便當', '燴飯', '單點'].map(cat => {
             const catItems = filteredMenu.filter(i => i.category === cat)
             if (catItems.length === 0) return null
 
@@ -209,23 +248,23 @@ export default function CustomerOrderPage() {
                     >
                       {/* 圖片區 */}
                       <div className="h-28 bg-gold-100 flex items-center justify-center text-4xl select-none">
-                        {item.emoji}
+                        {item.emoji || '🍱'}
                       </div>
 
                       {/* 資訊區 */}
-                        <div className="p-3 flex flex-col flex-1">
-                          <p className="text-sm font-body font-semibold text-charcoal-900 leading-tight">
-                            {item.name}
-                          </p>
-                          {item.sub && (
-                            <p className="text-[11px] text-charcoal-900/40 mt-0.5">{item.sub}</p>
-                          )}
-                          {item.option && (
-                            <p className="text-[10px] text-charcoal-900/30 mt-0.5">{item.option}</p>
-                          )}
-                          <p className="font-mono text-[15px] font-bold text-gold-500 mt-auto">
-                            NT${item.price}
-                          </p>
+                      <div className="p-3 flex flex-col flex-1">
+                        <p className="text-sm font-body font-semibold text-charcoal-900 leading-tight">
+                          {item.name}
+                        </p>
+                        {item.sub && (
+                          <p className="text-[11px] text-charcoal-900/40 mt-0.5">{item.sub}</p>
+                        )}
+                        {item.option && (
+                          <p className="text-[10px] text-charcoal-900/30 mt-0.5">{item.option}</p>
+                        )}
+                        <p className="font-mono text-[15px] font-bold text-gold-500 mt-auto">
+                          NT${item.price}
+                        </p>
                       </div>
                     </button>
                   ))}
@@ -234,8 +273,15 @@ export default function CustomerOrderPage() {
             )
           })}
 
+          {/* 載入失敗但有 fallback 資料 */}
+          {!menuLoading && menuError && menu.length > 0 && (
+            <p className="text-center text-[12px] text-charcoal-900/25 mb-4">
+              部分資料來自本地快取，即時更新請稍後重整
+            </p>
+          )}
+
           {/* 如果過濾後無結果 */}
-          {filteredMenu.length === 0 && (
+          {!menuLoading && filteredMenu.length === 0 && (
             <div className="text-center py-20 text-charcoal-900/30">
               <p className="text-4xl mb-3">🍽️</p>
               <p className="text-sm">此分類尚無餐點</p>
@@ -285,7 +331,7 @@ export default function CustomerOrderPage() {
           ) : (
             cart.map(item => (
               <div key={item.item_id} className="flex items-center gap-3 bg-gold-50 rounded-lg p-3">
-                <span className="text-2xl shrink-0">{item.emoji}</span>
+                <span className="text-2xl shrink-0">{item.emoji || '🍱'}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-body font-medium text-charcoal-900 truncate">
                     {item.name}
