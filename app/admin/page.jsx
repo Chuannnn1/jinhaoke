@@ -109,8 +109,10 @@ export default function AdminOrderPage() {
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {[
-            { label: '訂單',     href: '/admin',         active: true  },
-            { label: '庫存',     href: '/admin/inventory', active: false },
+            { label: '儀表板',   href: '/admin/dashboard',    active: false },
+            { label: '訂單',     href: '/admin',              active: true  },
+            { label: '庫存',     href: '/admin/inventory',       active: false },
+            { label: '採購',     href: '/admin/purchase-orders', active: false },
           ].map(item => (
             <a
               key={item.label}
