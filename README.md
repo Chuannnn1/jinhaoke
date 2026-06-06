@@ -233,12 +233,19 @@ order_item ◄─┤
 
 ### 庫存異動時機（實作時注意）
 
-| 動作 | 觸發 | 影響 |
+|| 動作 | 觸發 | 影響 |
 |------|------|------|
 | 下單 | POST `/api/orders` | 只寫入 order + order_item，**不扣庫存** |
-| 出餐 | PATCH `/api/orders/status` → `done` | 查 `recipe`，扣各項食材庫存 |
+| 出餐 | PATCH `/api/orders/status` → `done`（已完成）| 查 `recipe`，扣各項食材庫存 |
 | 進貨入庫 | POST `/api/purchase-orders/:id/receive` | 增加 `ingredient.stock_qty` |
 | 退貨 | POST `/api/purchase-orders/:id/return` | 減少 `ingredient.stock_qty` |
+
+### 訂單五狀態流程
+
+```
+待製作 → 製作中 → 待付款 → 已完成（→ 出餐扣庫存）
+                      ↘ 已取消（取消訂單，不扣庫存）
+```
 
 ---
 
@@ -364,8 +371,9 @@ main（隨時可部署）
 ## 缴交成品規格（10天後）
 
 - ✅ 前台：顧客觸控點餐、購物車、訂單送出
-- ✅ 後台：訂單看板、狀態拖曳更新
-- ✅ API：26支全部上線
-- ❌ 後台：選單 CRUD、庫存管理、供應商管理、報表頁面
-- ❌ 庫存：自動扣庫存（出餐時）、一鍵補貨、驗貨入庫、退貨
+- ✅ 後台：五欄訂單看板（待製作/製作中/待付款/已完成/已取消）
+- ✅ 庫存：出餐時扣庫存（PATCH orders/status → done）
+- ✅ API：10/26 支（menu 5支 + orders 5支）
+- ❌ API：其餘 16 支（庫存/供應商/食材/報表）
+- ❌ 後台頁面：選單 CRUD、庫存管理、供應商管理、報表頁面
 - ❌ 部署：VPS + Tailscale Funnel

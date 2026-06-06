@@ -166,13 +166,13 @@ export default function CustomerOrderPage() {
     <div className="flex h-screen overflow-hidden">
 
       {/* ======== Sidebar ======== */}
-      <aside className="w-[220px] bg-charcoal-900 flex flex-col shrink-0">
+      <aside className="w-[220px] bg-ink flex flex-col shrink-0">
         {/* Logo */}
-        <div className="px-6 py-6 border-b border-white/5">
-          <h1 className="text-gold-400 font-display text-xl font-semibold tracking-wide">
+        <div className="px-6 py-6 border-b border-ink/5">
+          <h1 className="text-clay font-display text-xl font-semibold tracking-wide">
             金濠客食堂
           </h1>
-          <p className="text-charcoal-700 text-[11px] mt-1 tracking-wider uppercase font-body">
+          <p className="text-ink-soft text-[11px] mt-1 tracking-wider uppercase font-body">
             Jinhaoke
           </p>
         </div>
@@ -180,7 +180,7 @@ export default function CustomerOrderPage() {
         {/* Nav — 前台只有點餐 */}
         <nav className="flex-1 px-3 py-4">
           <div
-            className="w-full text-left px-4 py-2.5 rounded-md text-sm text-gold-400 border-l-[3px] border-l-gold-400 bg-gold-400/10"
+            className="w-full text-left px-4 py-2.5 rounded-md text-sm text-clay border-l-[3px] border-l-clay bg-clay/10"
           >
             點餐
           </div>
@@ -194,8 +194,8 @@ export default function CustomerOrderPage() {
       >
 
         {/* ---- Top Bar ---- */}
-        <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-          <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+        <header className="h-16 bg-cream border-b border-border flex items-center justify-between px-8 shrink-0">
+          <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
             點餐
           </h2>
 
@@ -207,8 +207,8 @@ export default function CustomerOrderPage() {
                 onClick={() => setActiveTag(p)}
                 className={`px-4 py-1.5 rounded-full text-[13px] font-body font-medium transition-all duration-200 ${
                   activeTag === p
-                    ? 'bg-gold-400 text-white'
-                    : 'bg-transparent text-charcoal-900/60 border border-gold-200 hover:border-gold-400'
+                    ? 'bg-clay text-cream'
+                    : 'bg-transparent text-ink/60 border border-border hover:border-clay'
                 }`}
               >
                 {p}
@@ -216,16 +216,16 @@ export default function CustomerOrderPage() {
             ))}
           </div>
 
-          <span className="text-sm text-charcoal-900/50 font-mono">桌號 · A3</span>
+          <span className="text-sm text-ink/50 font-mono">桌號 · A3</span>
         </header>
 
         {/* ---- Content ---- */}
-        <main className="flex-1 overflow-auto p-8 bg-gold-50">
+        <main className="flex-1 overflow-auto p-8 bg-cream">
 
           {/* 載入中 */}
           {menuLoading && (
             <div className="flex items-center justify-center h-64">
-              <p className="text-charcoal-900/30">載入菜單中…</p>
+              <p className="text-ink/30">載入菜單中…</p>
             </div>
           )}
 
@@ -236,7 +236,7 @@ export default function CustomerOrderPage() {
 
             return (
               <section key={cat} className="mb-10">
-                <h3 className="text-[13px] font-body font-semibold text-gold-500 uppercase tracking-widest mb-4">
+                <h3 className="text-[13px] font-body font-semibold text-clay uppercase tracking-widest mb-4">
                   {cat}
                 </h3>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4">
@@ -247,22 +247,22 @@ export default function CustomerOrderPage() {
                       className="card card-hover text-left flex flex-col h-full overflow-hidden"
                     >
                       {/* 圖片區 */}
-                      <div className="h-28 bg-gold-100 flex items-center justify-center text-4xl select-none">
+                      <div className="h-28 bg-clay-soft flex items-center justify-center text-4xl select-none">
                         {item.emoji || '🍱'}
                       </div>
 
                       {/* 資訊區 */}
                       <div className="p-3 flex flex-col flex-1">
-                        <p className="text-sm font-body font-semibold text-charcoal-900 leading-tight">
+                        <p className="text-sm font-body font-semibold text-ink leading-tight">
                           {item.name}
                         </p>
                         {item.sub && (
-                          <p className="text-[11px] text-charcoal-900/40 mt-0.5">{item.sub}</p>
+                          <p className="text-[11px] text-ink/40 mt-0.5">{item.sub}</p>
                         )}
                         {item.option && (
-                          <p className="text-[10px] text-charcoal-900/30 mt-0.5">{item.option}</p>
+                          <p className="text-[10px] text-ink/30 mt-0.5">{item.option}</p>
                         )}
-                        <p className="font-mono text-[15px] font-bold text-gold-500 mt-auto">
+                        <p className="font-mono text-[15px] font-bold text-clay mt-auto">
                           NT${item.price}
                         </p>
                       </div>
@@ -275,14 +275,14 @@ export default function CustomerOrderPage() {
 
           {/* 載入失敗但有 fallback 資料 */}
           {!menuLoading && menuError && menu.length > 0 && (
-            <p className="text-center text-[12px] text-charcoal-900/25 mb-4">
+            <p className="text-center text-[12px] text-ink/25 mb-4">
               部分資料來自本地快取，即時更新請稍後重整
             </p>
           )}
 
           {/* 如果過濾後無結果 */}
           {!menuLoading && filteredMenu.length === 0 && (
-            <div className="text-center py-20 text-charcoal-900/30">
+            <div className="text-center py-20 text-ink/30">
               <p className="text-4xl mb-3">🍽️</p>
               <p className="text-sm">此分類尚無餐點</p>
             </div>
@@ -290,15 +290,15 @@ export default function CustomerOrderPage() {
         </main>
       </div>
 
-      {/* ======== Cart FAB（右下浮動按鈕） ======== */}
+{/* ======== Cart FAB（右下浮動按鈕） ======== */}
       {!cartOpen && (
         <button
           onClick={() => setCartOpen(true)}
-          className="fixed right-6 bottom-6 w-14 h-14 bg-gold-400 hover:bg-gold-600 text-white rounded-full flex items-center justify-center text-2xl shadow-elevated transition-all duration-200 z-50"
+          className="fixed right-6 bottom-6 w-14 h-14 bg-clay hover:bg-clay-deep text-cream rounded-full flex items-center justify-center text-2xl shadow-card transition-all duration-200 z-50"
         >
           🛒
           {cart.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-danger text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 w-5 h-5 bg-warn text-cream text-[11px] font-bold rounded-full flex items-center justify-center">
               {cart.reduce((s, i) => s + i.quantity, 0)}
             </span>
           )}
@@ -307,15 +307,15 @@ export default function CustomerOrderPage() {
 
       {/* ======== Cart Panel（永遠在 DOM，用 translateX 控制進出） ======== */}
       <div
-        className="fixed top-0 right-0 h-screen w-[380px] bg-cream shadow-elevated z-40 flex flex-col transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        className="fixed top-0 right-0 h-screen w-[380px] bg-cream shadow-card-hover flex flex-col transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
         style={{ transform: cartOpen ? 'translateX(0)' : 'translateX(100%)' }}
       >
         {/* Cart Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gold-200 shrink-0">
-          <h3 className="font-body font-semibold text-charcoal-900 text-sm">目前點餐</h3>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <h3 className="font-body font-semibold text-ink text-sm">目前點餐</h3>
           <button
             onClick={() => setCartOpen(false)}
-            className="w-8 h-8 rounded-full bg-gold-100 hover:bg-gold-200 text-charcoal-900 flex items-center justify-center text-sm transition-colors"
+            className="w-8 h-8 rounded-full bg-clay-soft hover:bg-border text-ink flex items-center justify-center text-sm transition-colors"
           >
             ✕
           </button>
@@ -324,61 +324,58 @@ export default function CustomerOrderPage() {
         {/* Cart Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {cart.length === 0 ? (
-            <div className="text-center py-16 text-charcoal-900/25">
+            <div className="text-center py-16 text-ink/25">
               <p className="text-4xl mb-2">🍱</p>
               <p className="text-sm">尚未選取餐點</p>
             </div>
           ) : (
             cart.map(item => (
-              <div key={item.item_id} className="flex items-center gap-3 bg-gold-50 rounded-lg p-3">
+              <div key={item.item_id} className="flex items-center gap-3 bg-clay-soft rounded-lg p-3">
                 <span className="text-2xl shrink-0">{item.emoji || '🍱'}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-body font-medium text-charcoal-900 truncate">
+                  <p className="text-sm font-body font-medium text-ink truncate">
                     {item.name}
                   </p>
-                  <p className="font-mono text-[13px] text-gold-500 font-bold">
+                  <p className="font-mono text-[13px] text-clay font-bold">
                     NT${item.price}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => updateQuantity(item.item_id, -1)}
-                    className="w-6 h-6 rounded-full bg-white border border-gold-200 text-charcoal-900/50 hover:text-charcoal-900 flex items-center justify-center text-xs"
-                  >−</button>
-                  <span className="w-5 text-center font-mono text-sm font-medium text-charcoal-900">
+                    className="w-6 h-6 rounded-full bg-paper border border-border text-ink/50 hover:text-ink flex items-center justify-center text-xs">−</button>
+                  <span className="w-5 text-center font-mono text-sm font-medium text-ink">
                     {item.quantity}
                   </span>
                   <button
                     onClick={() => updateQuantity(item.item_id, 1)}
-                    className="w-6 h-6 rounded-full bg-gold-400 text-white hover:bg-gold-600 flex items-center justify-center text-xs transition-colors"
-                  >+</button>
+                    className="w-6 h-6 rounded-full bg-clay text-cream hover:bg-clay-deep flex items-center justify-center text-xs transition-colors">+</button>
                 </div>
                 <button
                   onClick={() => removeFromCart(item.item_id)}
-                  className="text-charcoal-900/25 hover:text-danger text-sm ml-1 transition-colors"
-                >✕</button>
+                  className="text-ink/25 hover:text-warn text-sm ml-1 transition-colors">✕</button>
               </div>
             ))
           )}
         </div>
 
         {/* Cart Footer */}
-        <div className="border-t border-gold-200 bg-gold-50 px-6 py-4 shrink-0">
+        <div className="border-t border-border bg-clay-soft px-6 py-4 shrink-0">
           {/* 備註 */}
           <textarea
             placeholder="備註：外帶、不要辣…"
             value={customerNote}
             onChange={e => setCustomerNote(e.target.value)}
             rows={2}
-            className="w-full bg-white border border-gold-200 rounded-md px-3 py-2 text-[13px] font-body text-charcoal-900 placeholder-charcoal-900/25 resize-none focus:outline-none focus:border-gold-400 mb-4"
+            className="w-full bg-paper border border-border rounded-md px-3 py-2 text-[13px] font-body text-ink placeholder-ink/25 resize-none focus:outline-none focus:border-clay mb-4"
           />
 
           {/* 總計 */}
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[13px] text-charcoal-900/60 font-body">
+            <span className="text-[13px] text-ink/60 font-body">
               共 {cart.reduce((s, i) => s + i.quantity, 0)} 項
             </span>
-            <p className="font-mono text-lg font-bold text-gold-500">
+            <p className="font-mono text-lg font-bold text-clay">
               NT$ {total}
             </p>
           </div>
@@ -387,7 +384,7 @@ export default function CustomerOrderPage() {
           <button
             onClick={handleSubmit}
             disabled={cart.length === 0}
-            className="w-full bg-gold-400 hover:bg-gold-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-body font-semibold text-sm py-3 rounded-md transition-colors duration-200"
+            className="w-full bg-clay hover:bg-clay-deep disabled:opacity-30 disabled:cursor-not-allowed text-cream font-body font-semibold text-sm py-3 rounded-md transition-colors duration-200"
           >
             送出訂單
           </button>
@@ -396,22 +393,22 @@ export default function CustomerOrderPage() {
 
       {/* ======== 成功彈窗 ======== */}
       {orderDone && justOrdered && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-cream rounded-lg p-8 text-center max-w-sm mx-4 shadow-elevated">
-            <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl text-success">✓</span>
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
+          <div className="bg-cream rounded-lg p-8 text-center max-w-sm mx-4 shadow-card-hover">
+            <div className="w-16 h-16 bg-moss-soft rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl text-moss">✓</span>
             </div>
-            <h2 className="font-display text-xl text-charcoal-900 mb-2">訂單成立</h2>
-            <p className="font-mono text-[11px] text-charcoal-900/40 mb-4">
+            <h2 className="font-display text-xl text-ink mb-2">訂單成立</h2>
+            <p className="font-mono text-[11px] text-ink/40 mb-4">
               #{justOrdered.orderId}
             </p>
-            <div className="bg-gold-50 rounded-md p-4 mb-4">
-              <p className="text-[13px] text-charcoal-900/60">{justOrdered.items} 項商品</p>
-              <p className="font-mono text-xl font-bold text-gold-500 mt-1">
+            <div className="bg-clay-soft rounded-md p-4 mb-4">
+              <p className="text-[13px] text-ink/60">{justOrdered.items} 項商品</p>
+              <p className="font-mono text-xl font-bold text-clay mt-1">
                 NT$ {justOrdered.total}
               </p>
             </div>
-            <p className="text-[12px] text-charcoal-900/30">請稍候，正在準備餐點</p>
+            <p className="text-[12px] text-ink/30">請稍候，正在準備餐點</p>
           </div>
         </div>
       )}

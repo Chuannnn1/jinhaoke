@@ -1,107 +1,64 @@
 # TypeScript API Building Tutorial
 
-> 適用對象：需要實作或擴展後端 API 的開發者  
-> 更新日期：2026-05-25  
-> API 語言：TypeScript（.ts）| 框架：Next.js 14 API Routes | 資料庫：SQLite（better-sqlite3）  
-> 必讀先修：[menu-api-example.md](menu-api-example.md)、[getting-started.md](getting-started.md)
+> 適用對象：需要實作後端 API 的組員  
+> 必備能力：JavaScript 基礎、了解 SQL 是什麼  
+> 更新日期：2026-05-27  
+> 技術棧：Next.js 14 API Routes + TypeScript + SQLite（better-sqlite3）
 
 ---
 
-## 前言：什麼是 API Routes？
+## 1. 這個教程要教你做什麼
 
-Next.js 的 API Routes 是**在同一部 Next.js 伺服器上處理 HTTP 請求**的機制。
-
-```
-瀏覽器/前端
-    │ fetch('/api/orders', { method: 'POST', body: ... })
-    ▼
-Next.js Server（在 VPS 的 3100 port）
-    │
-    ├── app/api/orders/route.ts  ← 你寫的程式碼在這裡
-    │        │
-    │        ▼
-    │    lib/db.ts（better-sqlite3 連線）
-    │        │
-    │        ▼
-    │    data/jinhaoke.db（SQLite 檔案）
-    │
-    └── 回傳 JSON
-```
-
-**特色：**
-- 前端和 API 在同一個 port（3100），不需要分開架 Server
-- 用 `route.ts` 副檔名區分 TypeScript（API 層）
-- 用 `route.js` 副檔名代表 JavaScript（目前混用狀態）
+看完之後，你能自己實作任意一支 API。  
+以現有的 `/api/menu/route.ts` 當模板，實作另外 18 支還沒寫的 API。
 
 ---
 
-## 1. 專案現況
+## 2. 專案現況
 
 ```
-app/api/
-├── orders/
-│   ├── route.js        ← JavaScript 版（舊）
-│   └── status/
-│       ├── route.js    ← JavaScript 版（舊）
-│       └── route.ts    ← 【TypeScript 版】已實作 PATCH
-├── menu/               ← 尚無 route.ts（待實作）
-├── inventory/          ← 尚無（待實作）
-└── purchase-orders/    ← 尚無（待實作）
+app/api/                      已實作              待實作
+─────────────────────────────────────────────────────────
+menu/route.ts                 GET ✅ POST ✅
+menu/[id]/route.ts            GET ✅ PUT ✅ DELETE ✅
+orders/route.ts               GET ✅ POST ✅
+orders/status/route.ts                          PATCH ✅（其他 API 待實作）
+inventory/route.ts                               GET POST
+purchase-orders/route.ts                        GET POST PUT DELETE
+purchase-orders/[id]/receive                    POST（驗貨入庫）
+purchase-orders/auto-restock                     POST（一鍵補貨）
+suppliers/route.ts                              GET POST PUT DELETE
+ingredients/route.ts                            GET POST PUT DELETE
+reports/daily                                   GET
+reports/monthly                                 GET
+─────────────────────────────────────────────────────────
+                                            共 18 支待實作
 ```
-
-`lib/db.js` 目前仍是 **JavaScript**，尚未升級成 `db.ts`（待辨）。
 
 ---
 
-## 2. 核心觀念：為什麼要用 TypeScript？
+## 3. API 統一規格
 
-TypeScript 的核心價值是**在開發階段就知道錯誤**，而不是等到使用者操作才爆開。
+所有 API 的**規格都是同一套**，記住這個格式：
 
-### 2.1 問題：JavaScript 的隱形錯誤
-
-```javascript
-// JS：不會報錯，直到 cart 內容不是你要的形狀
-const { order_id, status } = await request.json()
-db.prepare('UPDATE "order" SET status = ?').run(status, order_id)
-// 如果前端傳了 { orderId: 'xxx', newStatus: 'done' } → 默默失敗
 ```
-
-### 2.2 解決：TypeScript 的介面定義
-
-```typescript
-// 明確定義 request body 應該長什麼樣子
-interface UpdateStatusBody {
-  order_id: string
-  status: string
-}
-
-export async function PATCH(request: Request) {
-  const body: UpdateStatusBody = await request.json()
-  // 現在 TS 知道：body.order_id 和 body.status 一定存在
-  // 如果前端傳錯了 → 編譯階段就警告
-}
+請求：Content-Type: application/json
+回應：{ success: true/false, data?: ..., error?: string }
+成功：200（查詢/修改）| 201（新增）
+失敗：400（參數錯誤）| 404（找不到）| 500（伺服器錯誤）
 ```
-
-### 2.3 好處
-
-- VS Code 自動補全（IntelliSense）
-- 錯誤在開發階段就出現
-- 重構時有型別保護
 
 ---
 
-## 3. lib/db.ts（資料庫連線）
+## 4. 資料庫連線（lib/db.ts）
 
-> 這是所有 API 的底層。**目前仍是 JS 版**（`lib/db.js`），教學以 TS 版說明。
-
-### 3.1 程式碼
+所有 API 的底層都是這個：
 
 ```typescript
 // lib/db.ts
 import Database from 'better-sqlite3'
 import path from 'path'
 
-// 資料庫檔案位置：jinhaoke/data/jinhaoke.db
 const DB_PATH = path.join(process.cwd(), 'data', 'jinhaoke.db')
 
 export function getDb() {
@@ -109,20 +66,14 @@ export function getDb() {
 }
 ```
 
-### 3.2 觀念重點
-
-| 觀念 | 說明 |
-|------|------|
-| `process.cwd()` | 取得 Node.js 啟動時的工作目錄（專案根目錄）|
-| `better-sqlite3` | 同步 API，效能比 `sqlite3` 更好（不需 callback）|
-| Singleton | 每次 request 都 `new Database()` 是正常行為，SQLite 會處理連線池 |
-| `path.join` | 跨平台路徑拼接（Windows/Linux 相容）|
+> `process.cwd()` = 專案根目錄，`data/jinhaoke.db` 就是 SQLite 檔案位置。  
+> 每次 API call 都 `new Database()` 是正常的，SQLite 會處理連線池。
 
 ---
 
-## 4. API Route 寫作模板
+## 5. API Route 標準模板
 
-每個 API route 檔案（`app/api/xxx/route.ts`）都長這樣：
+每支 `app/api/xxx/route.ts` 都長這樣：
 
 ```typescript
 // app/api/xxx/route.ts
@@ -130,12 +81,12 @@ import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
 // ============================================================
-// 統一回應格式（所有 API 都長這樣）
+// 共用型別（每支檔案幾乎都長這樣）
 // ============================================================
-interface ApiResponse {
+interface ApiResponse<T = unknown> {
   success: boolean
   error?: string
-  data?: any
+  data?: T
 }
 
 // ============================================================
@@ -144,17 +95,24 @@ interface ApiResponse {
 export async function GET(req: Request) {
   try {
     const db = getDb()
-    // 1. 取得參數（可選）
     const { searchParams } = new URL(req.url)
-    const id = searchParams.get('id')
 
-    // 2. 操作資料庫
-    const result = db.prepare('SELECT * FROM xxx WHERE id = ?').get(id)
+    // 從 ?key=value 取參數
+    const name = searchParams.get('name')
 
-    // 3. 回傳
-    return NextResponse.json<ApiResponse>({ success: true, data: result })
+    let sql = `SELECT * FROM xxx`
+    const params: (string | number)[] = []
+
+    if (name) {
+      sql += ` WHERE name = ?`
+      params.push(name)
+    }
+
+    const rows = db.prepare(sql).all(...params)
+    return NextResponse.json<ApiResponse>({ success: true, data: rows })
+
   } catch (err) {
-    // 4. 錯誤處理：安全地回傳錯誤訊息
+    console.error('[GET /api/xxx]', err)
     return NextResponse.json<ApiResponse>(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
       { status: 500 }
@@ -168,21 +126,30 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    // 驗證必填欄位
+    const db = getDb()
+
+    // 1. 參數驗證（必填欄位）
     if (!body.name) {
       return NextResponse.json<ApiResponse>(
         { success: false, error: 'name 為必填欄位' },
         { status: 400 }
       )
     }
-    const db = getDb()
-    const stmt = db.prepare('INSERT INTO xxx (name) VALUES (?)')
+
+    // 2. 寫入
+    const stmt = db.prepare(`INSERT INTO xxx (name) VALUES (?)`)
     const result = stmt.run(body.name)
+
+    // 3. 回傳新建立的資料
+    const newRow = db.prepare(`SELECT * FROM xxx WHERE id = ?`).get(result.lastInsertRowid)
+
     return NextResponse.json<ApiResponse>(
-      { success: true, data: { id: result.lastInsertRowid } },
+      { success: true, data: newRow },
       { status: 201 }
     )
+
   } catch (err) {
+    console.error('[POST /api/xxx]', err)
     return NextResponse.json<ApiResponse>(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
       { status: 500 }
@@ -193,81 +160,134 @@ export async function POST(req: Request) {
 
 ---
 
-## 5. 實作第一個完整 API：`/api/menu/route.ts`
+## 6. 動手實作庫存 API
 
-> 這是 `docs/menu-api-example.md` 的完整解析版。
+### 需求：`GET /api/inventory` + `POST /api/inventory`
 
-### 5.1 程式碼
+**先看 schema**（`lib/schema.sql`）：
+
+```sql
+CREATE TABLE ingredient (
+  name TEXT PRIMARY KEY,      -- 食材名稱（PK）
+  stock_qty REAL DEFAULT 0,    -- 庫存數量
+  safety_stock REAL DEFAULT 0,-- 安全存量
+  stock_unit TEXT,             -- 庫存單位（斤、公斤）
+  order_unit TEXT,             -- 叫貨單位（箱、包）
+  qty_per_order_unit REAL,     -- 每單位含多少 stock_unit
+  supplier_name TEXT
+);
+```
+
+**實作：**
 
 ```typescript
-// app/api/menu/route.ts
+// app/api/inventory/route.ts
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
-// ============================================================
-// 型別定義
-// ============================================================
-
-/** 菜單品項（對應 menu_item table）*/
-interface MenuItem {
-  item_id: number
-  name: string
-  category: string
-  price: number
-  description: string
-  is_active: number
-  stock_qty: number
-  low_stock_threshold: number
-  sort_order: number
-  created_at: string
-  updated_at: string
-}
-
-/** POST /api/menu 的 request body */
-interface CreateMenuBody {
-  name: string
-  category: string
-  price: number
-  description?: string
-  is_active?: number
-  stock_qty?: number
-  sort_order?: number
-}
-
-/** 統一回應格式 */
 interface ApiResponse<T = unknown> {
   success: boolean
   error?: string
   data?: T
 }
 
-// ============================================================
-// GET /api/menu — 查詢全部（可依分類篩選）
-// ============================================================
 export async function GET(req: Request) {
   try {
     const db = getDb()
     const { searchParams } = new URL(req.url)
-    const category = searchParams.get('category') // e.g. ?category=主食
+    const lowStock = searchParams.get('low_stock') // ?low_stock=true
 
     let sql = `
-      SELECT * FROM menu_item
-      WHERE is_active = 1
-      ORDER BY sort_order ASC, item_id ASC
+      SELECT i.name, i.stock_qty, i.safety_stock,
+             i.stock_unit, i.order_unit, i.qty_per_order_unit,
+             s.name as supplier_name
+      FROM ingredient i
+      LEFT JOIN supplier s ON i.supplier_name = s.name
     `
-    const params: (string | number)[] = []
+    const params: string[] = []
 
-    if (category) {
-      sql = `
-        SELECT * FROM menu_item
-        WHERE is_active = 1 AND category = ?
-        ORDER BY sort_order ASC, item_id ASC
-      `
-      params.push(category)
+    if (lowStock === 'true') {
+      sql += ` WHERE i.stock_qty < i.safety_stock`
     }
 
-    const menu = db.prepare(sql).all(...params) as MenuItem[]
-    return NextResponse.json<ApiResponse<MenuItem[]>>({ success: true, data: menu })
+    sql += ` ORDER BY i.name`
+
+    const rows = db.prepare(sql).all(...params)
+    return NextResponse.json<ApiResponse>({ success: true, data: rows })
+
+  } catch (err) {
+    console.error('[GET /api/inventory]', err)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const db = getDb()
+
+    if (!body.name) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: 'name 為必填欄位' },
+        { status: 400 }
+      )
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO ingredient (name, stock_qty, safety_stock, stock_unit, order_unit, qty_per_order_unit, supplier_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    stmt.run(
+      body.name,
+      body.stock_qty ?? 0,
+      body.safety_stock ?? 0,
+      body.stock_unit ?? '斤',
+      body.order_unit ?? '箱',
+      body.qty_per_order_unit ?? 10,
+      body.supplier_name ?? null
+    )
+
+    const newRow = db.prepare(`SELECT * FROM ingredient WHERE name = ?`).get(body.name)
+
+    return NextResponse.json<ApiResponse>(
+      { success: true, data: newRow },
+      { status: 201 }
+    )
+
+  } catch (err) {
+    console.error('[POST /api/inventory]', err)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## 7. 實作 suppliers API（CRUD）
+
+```typescript
+// app/api/suppliers/route.ts
+import { NextResponse } from 'next/server'
+import { getDb } from '@/lib/db'
+
+interface ApiResponse<T = unknown> {
+  success: boolean
+  error?: string
+  data?: T
+}
+
+export async function GET() {
+  try {
+    const db = getDb()
+    const rows = db.prepare(`SELECT * FROM supplier ORDER BY name`).all()
+    return NextResponse.json<ApiResponse>({ success: true, data: rows })
   } catch (err) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
@@ -276,51 +296,26 @@ export async function GET(req: Request) {
   }
 }
 
-// ============================================================
-// POST /api/menu — 新增品項
-// ============================================================
 export async function POST(req: Request) {
   try {
-    const body: CreateMenuBody = await req.json()
-
-    // 1. 參數驗證
-    if (!body.name || !body.category || body.price === undefined) {
+    const body = await req.json()
+    if (!body.name) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'name、category、price 為必填欄位' },
+        { success: false, error: 'name 為必填欄位' },
         { status: 400 }
       )
     }
 
     const db = getDb()
+    db.prepare(`INSERT INTO supplier (name, phone) VALUES (?, ?)`)
+      .run(body.name, body.phone ?? null)
 
-    // 2. 寫入資料庫
-    const stmt = db.prepare(`
-      INSERT INTO menu_item (
-        name, category, price, description, is_active,
-        stock_qty, sort_order, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '+8 hours'), datetime('now', '+8 hours'))
-    `)
-
-    const result = stmt.run(
-      body.name,
-      body.category,
-      body.price,
-      body.description ?? '',
-      body.is_active ?? 1,
-      body.stock_qty ?? 0,
-      body.sort_order ?? 0
-    )
-
-    // 3. 回傳新建立的資料（包含自動產生的 item_id）
-    const newItem = db.prepare(
-      'SELECT * FROM menu_item WHERE item_id = ?'
-    ).get(result.lastInsertRowid) as MenuItem
-
-    return NextResponse.json<ApiResponse<MenuItem>>(
-      { success: true, data: newItem },
+    return NextResponse.json<ApiResponse>(
+      { success: true, data: { name: body.name } },
       { status: 201 }
     )
   } catch (err) {
+    console.error('[POST /api/suppliers]', err)
     return NextResponse.json<ApiResponse>(
       { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
       { status: 500 }
@@ -329,65 +324,64 @@ export async function POST(req: Request) {
 }
 ```
 
-### 5.2 型別定義的價值
-
 ```typescript
-// 沒有型別時：你不知道 body 裡有什麼
-const body = await req.json()
-db.prepare('INSERT INTO menu_item ...').run(body.name, ...)
-
-// 有型別時：VS Code 直接告訴你少了哪個欄位
-interface CreateMenuBody {
-  name: string
-  category: string
-  price: number
-}
-// 少了任一欄位 → 紅色警告（如果有用 strict 模式）
-```
-
----
-
-## 6. 實作 `PATCH /api/orders/status`（已存在，可對照）
-
-```typescript
-// app/api/orders/status/route.ts
+// app/api/suppliers/[name]/route.ts
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
-
-interface UpdateStatusBody {
-  order_id: string
-  status: string
-}
 
 interface ApiResponse {
   success: boolean
   error?: string
 }
 
-export async function PATCH(request: Request) {
+export async function GET(req: Request, { params }: { params: { name: string } }) {
   try {
-    const body: UpdateStatusBody = await request.json()
-
-    if (!body.order_id || !body.status) {
+    const db = getDb()
+    const row = db.prepare(`SELECT * FROM supplier WHERE name = ?`).get(params.name)
+    if (!row) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: '缺少 order_id 或 status' },
-        { status: 400 }
+        { success: false, error: '找不到該供應商' },
+        { status: 404 }
+      )
+    }
+    return NextResponse.json<ApiResponse>({ success: true, data: row })
+  } catch (err) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PUT(req: Request, { params }: { params: { name: string } }) {
+  try {
+    const body = await req.json()
+    const db = getDb()
+
+    const existing = db.prepare(`SELECT * FROM supplier WHERE name = ?`).get(params.name)
+    if (!existing) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: '找不到該供應商' },
+        { status: 404 }
       )
     }
 
-    // 狀態映射（後台狀態 → DB 狀態）
-    const statusMap: Record<string, string> = {
-      pending: 'pending',
-      preparing: 'preparing',
-      done: 'completed',
-    }
+    db.prepare(`UPDATE supplier SET phone = ? WHERE name = ?`)
+      .run(body.phone ?? null, params.name)
 
-    const dbStatus = statusMap[body.status] || body.status
+    return NextResponse.json<ApiResponse>({ success: true })
+  } catch (err) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(req: Request, { params }: { params: { name: string } }) {
+  try {
     const db = getDb()
-
-    db.prepare(`UPDATE "order" SET status = ? WHERE order_id = ?`)
-      .run(dbStatus, body.order_id)
-
+    db.prepare(`DELETE FROM supplier WHERE name = ?`).run(params.name)
     return NextResponse.json<ApiResponse>({ success: true })
   } catch (err) {
     return NextResponse.json<ApiResponse>(
@@ -398,209 +392,377 @@ export async function PATCH(request: Request) {
 }
 ```
 
-### 6.1 觀念：狀態映射
+> **注意**：`params` 在 Next.js 14 是同步的 `{ params }`，不用 `await`。
 
+---
+
+## 8. 實作 purchase-orders（進貨單）
+
+**看 schema：**
+
+```sql
+CREATE TABLE purchase_order (
+  po_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier_name TEXT,       -- FK → supplier.name
+  status TEXT DEFAULT 'pending', -- pending / received
+  created_at TEXT,
+  total_cost REAL DEFAULT 0
+);
+
+CREATE TABLE purchase_order_item (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  po_id INTEGER,            -- FK → purchase_order.po_id
+  ingredient_name TEXT,      -- FK → ingredient.name
+  order_qty REAL,           -- 叫貨數量（order_unit）
+  unit_cost REAL,
+  received_qty REAL DEFAULT 0
+);
 ```
-後台 UI 狀態          →    DB 儲存值
-─────────────────────────
-'pending'  (待處理)   →  'pending'
-'preparing' (準備中)  →  'preparing'
-'done'     (已完成)   →  'completed'
-```
 
-好處：前端可以有自己的狀態命名，不被 DB 欄位值綁住。
-
-### 6.2 觀念：`"order"` 雙引號
+**重點觀念：跨表寫入要用 transaction（還沒做到這步，先知道這個）**
 
 ```typescript
-db.prepare(`UPDATE "order" SET status = ? WHERE order_id = ?`)
-//                   ↑ ↑
-//               因為 order 是 SQL 保留字
+// app/api/purchase-orders/route.ts
+import { NextResponse } from 'next/server'
+import { getDb } from '@/lib/db'
+
+interface ApiResponse<T = unknown> {
+  success: boolean
+  error?: string
+  data?: T
+}
+
+export async function GET() {
+  try {
+    const db = getDb()
+    const orders = db.prepare(`
+      SELECT po.*, s.name as supplier_name
+      FROM purchase_order po
+      LEFT JOIN supplier s ON po.supplier_name = s.name
+      ORDER BY po.created_at DESC
+    `).all()
+
+    // 順便撈 items
+    const items = db.prepare(`SELECT * FROM purchase_order_item`).all()
+
+    const result = orders.map(order => ({
+      ...order,
+      items: items.filter(i => i.po_id === order.po_id),
+    }))
+
+    return NextResponse.json<ApiResponse>({ success: true, data: result })
+  } catch (err) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const db = getDb()
+
+    if (!body.supplier_name || !body.items?.length) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: 'supplier_name 與 items 為必填' },
+        { status: 400 }
+      )
+    }
+
+    // 計算總成本
+    const totalCost = body.items.reduce(
+      (sum: number, i: { order_qty: number; unit_cost: number }) =>
+        sum + i.order_qty * i.unit_cost,
+      0
+    )
+
+    // 新增進貨單
+    const poResult = db.prepare(`
+      INSERT INTO purchase_order (supplier_name, total_cost)
+      VALUES (?, ?)
+    `).run(body.supplier_name, totalCost)
+
+    const poId = poResult.lastInsertRowid
+
+    // 新增進貨項目
+    const itemStmt = db.prepare(`
+      INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, unit_cost)
+      VALUES (?, ?, ?, ?)
+    `)
+
+    for (const item of body.items) {
+      itemStmt.run(poId, item.ingredient_name, item.order_qty, item.unit_cost)
+    }
+
+    return NextResponse.json<ApiResponse>(
+      { success: true, data: { po_id: poId } },
+      { status: 201 }
+    )
+  } catch (err) {
+    console.error('[POST /api/purchase-orders]', err)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
 ```
 
 ---
 
-## 7. 使用 curl 測試 API
+## 9. 實作 auto-restock（一鍵補貨）
 
-啟動伺服器後，另開一個 terminal 執行：
+當庫存低於安全存量，自動產生進貨單：
+
+```typescript
+// app/api/purchase-orders/auto-restock/route.ts
+import { NextResponse } from 'next/server'
+import { getDb } from '@/lib/db'
+
+interface ApiResponse<T = unknown> {
+  success: boolean
+  error?: string
+  data?: T
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const { supplier_name } = body
+
+    if (!supplier_name) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: 'supplier_name 為必填' },
+        { status: 400 }
+      )
+    }
+
+    const db = getDb()
+
+    // 找出該供應商旗下、低於安全存量的食材
+    const lowIngredients = db.prepare(`
+      SELECT * FROM ingredient
+      WHERE supplier_name = ? AND stock_qty < safety_stock
+    `).all(supplier_name) as Array<{
+      name: string
+      stock_qty: number
+      safety_stock: number
+      order_unit: string
+      qty_per_order_unit: number
+    }>
+
+    if (lowIngredients.length === 0) {
+      return NextResponse.json<ApiResponse>({
+        success: true,
+        data: { po_id: null, items: [], message: '所有食材庫存充足' }
+      })
+    }
+
+    // 計算每次補貨數量（一次補到安全存量 × 2）
+    const items = lowIngredients.map(ing => {
+      const qtyNeeded = (ing.safety_stock * 2) - ing.stock_qty
+      const orderQty = Math.ceil(qtyNeeded / ing.qty_per_order_unit)
+      return {
+        ingredient_name: ing.name,
+        order_qty: orderQty,
+        unit_cost: 0, // 先填空，實際要有 unit_cost 欄位
+      }
+    }).filter(i => i.order_qty > 0)
+
+    // 建立進貨單
+    const poResult = db.prepare(`
+      INSERT INTO purchase_order (supplier_name, total_cost)
+      VALUES (?, 0)
+    `).run(supplier_name)
+
+    const poId = poResult.lastInsertRowid
+
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, unit_cost)
+      VALUES (?, ?, ?, ?)
+    `)
+
+    for (const item of items) {
+      insertItem.run(poId, item.ingredient_name, item.order_qty, item.unit_cost)
+    }
+
+    return NextResponse.json<ApiResponse>(
+      { success: true, data: { po_id: poId, items } },
+      { status: 201 }
+    )
+
+  } catch (err) {
+    console.error('[POST /api/purchase-orders/auto-restock]', err)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## 10. 用 curl 測試你的 API
+
+啟動 `npm run dev` 之後，另開一個 terminal：
 
 ```bash
-# ========== Menu API ==========
+# -------- inventory --------
+curl http://localhost:3100/api/inventory
 
-# GET 全部
-curl http://localhost:3100/api/menu
+curl "http://localhost:3100/api/inventory?low_stock=true"
 
-# GET 依分類
-curl "http://localhost:3100/api/menu?category=手作便當"
-
-# POST 新增品項
-curl -X POST http://localhost:3100/api/menu \
+curl -X POST http://localhost:3100/api/inventory \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "測試便當",
-    "category": "手作便當",
-    "price": 150,
-    "description": "測試用",
-    "stock_qty": 99
-  }'
+  -d '{"name":"胭脂肉","stock_qty":5,"safety_stock":10,"stock_unit":"斤","order_unit":"箱","qty_per_order_unit":10,"supplier_name":"大園肉商"}'
 
-# ========== Orders Status API ==========
+# -------- suppliers --------
+curl http://localhost:3100/api/suppliers
 
-# PATCH 更新狀態
-curl -X PATCH http://localhost:3100/api/orders/status \
+curl -X POST http://localhost:3100/api/suppliers \
   -H "Content-Type: application/json" \
-  -d '{"order_id": "202605250001", "status": "preparing"}'
+  -d '{"name":"大園肉商","phone":"03-3861234"}'
 
-# ========== 預期回應 ==========
-# 成功：{ "success": true }
-# 失敗：{ "success": false, "error": "錯誤訊息" }
+# -------- purchase-orders --------
+curl http://localhost:3100/api/purchase-orders
+
+curl -X POST http://localhost:3100/api/purchase-orders \
+  -H "Content-Type: application/json" \
+  -d '{"supplier_name":"大園肉商","items":[{"ingredient_name":"胭脂肉","order_qty":2,"unit_cost":100}]}'
+
+curl -X POST http://localhost:3100/api/purchase-orders/auto-restock \
+  -H "Content-Type: application/json" \
+  -d '{"supplier_name":"大園肉商"}'
 ```
 
 ---
 
-## 8. 通用錯誤處理模式
-
-每個 API 都應該有三層錯誤處理：
-
-### 8.1 參數驗證錯誤（400）
+## 11. 實作查詢類 API
 
 ```typescript
-if (!body.name || body.price === undefined) {
-  return NextResponse.json<ApiResponse>(
-    { success: false, error: '缺少必填欄位' },
-    { status: 400 }
-  )
+// app/api/ingredients/route.ts — GET + POST
+export async function GET() {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT i.*, s.name as supplier_name
+    FROM ingredient i
+    LEFT JOIN supplier s ON i.supplier_name = s.name
+    ORDER BY i.name
+  `).all()
+  return NextResponse.json<ApiResponse>({ success: true, data: rows })
 }
 ```
 
-### 8.2 找不到資源（404）
-
 ```typescript
-const item = db.prepare('SELECT * FROM menu_item WHERE item_id = ?').get(id)
-if (!item) {
-  return NextResponse.json<ApiResponse>(
-    { success: false, error: '找不到該品項' },
-    { status: 404 }
-  )
+// app/api/reports/daily/route.ts
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const date = searchParams.get('date') // 格式：2026-05-27
+
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT o.*, COUNT(oi.id) as item_count
+    FROM "order" o
+    LEFT JOIN order_item oi ON o.order_id = oi.order_id
+    WHERE date(o.created_at) = ?
+    GROUP BY o.order_id
+    ORDER BY o.created_at DESC
+  `).all(date || new Date().toISOString().split('T')[0])
+
+  return NextResponse.json<ApiResponse>({ success: true, data: rows })
 }
 ```
 
-### 8.3 伺服器錯誤（500）
+---
+
+## 12. 實作數值扣庫存（出餐時）
+
+當後台把訂單狀態改成 `done`，要從 `recipe` 查原料比例、扣庫存：
 
 ```typescript
-try {
-  // ...
-} catch (err) {
-  console.error('GET /api/menu error:', err)  // 印到 server log
-  return NextResponse.json<ApiResponse>(
-    {
-      success: false,
-      // 不直接回傳 err（可能有機敏資訊）
-      error: err instanceof Error ? err.message : '伺服器錯誤'
-    },
-    { status: 500 }
-  )
+// app/api/orders/status/route.ts 補充 logic
+if (body.status === 'done') {
+  // 取得該訂單的所有品項
+  const orderItems = db.prepare(`
+    SELECT oi.item_id, oi.quantity, r.ingredient_name, r.qty_per_unit
+    FROM order_item oi
+    JOIN recipe r ON oi.item_id = r.item_id
+    WHERE oi.order_id = ?
+  `).all(body.order_id) as Array<{
+    item_id: number; quantity: number; ingredient_name: string; qty_per_unit: number
+  }>
+
+  // 扣除庫存
+  const updateStock = db.prepare(`
+    UPDATE ingredient SET stock_qty = stock_qty - ?
+    WHERE name = ?
+  `)
+
+  for (const row of orderItems) {
+    const consumed = row.quantity * row.qty_per_unit
+    updateStock.run(consumed, row.ingredient_name)
+  }
 }
 ```
 
-> ⚠️ **安全原則**：`catch` 區塊不要回傳 `err.stack` 或完整 Error 物件給前端，攻擊者可以從錯誤堆疊推斷系統架構。
+---
+
+## 13. Pre-Ship Checklist（自己檢查）
+
+每實作完一支 API，自己對照這個清單：
+
+- [ ] 有 `try / catch`，catch 區塊有 `console.error` + 500 回應
+- [ ] 必填參數有驗證，缺少時回 400
+- [ ] 找不到資源時回 404
+- [ ] 新增成功時回 201 + 回傳新建立的資料
+- [ ] 用 `curl` 測試過（成功與失敗都要測）
+- [ ] 如果要跨表寫入（同時寫入 2 張以上 table）→ 改用 transaction（目前先知道這件事）
 
 ---
 
-## 9. REST 風格路由對照
+## 14. 還沒實作的 18 支 API
 
 ```
-GET    /api/menu              → 查詢全部
-POST   /api/menu              → 新增品項
-GET    /api/menu/:id           → 查詢單一（需新增 app/api/menu/[id]/route.ts）
-PUT    /api/menu/:id           → 更新（需新增）
-DELETE /api/menu/:id           → 軟刪除（設 is_active=0）
+庫存（2支）
+  GET /api/inventory
+  POST /api/inventory
 
-GET    /api/orders             → 查詢全部
-POST   /api/orders             → 新增訂單
-GET    /api/orders/:id         → 查詢單一
-PATCH  /api/orders/:id/status   → 更新狀態
+供應商（4支）
+  GET /api/suppliers
+  POST /api/suppliers
+  PUT /api/suppliers/[name]
+  DELETE /api/suppliers/[name]
 
-GET    /api/inventory          → 查詢庫存
-POST   /api/inventory          → 新增食材
-PUT    /api/inventory/:id      → 更新庫存
-GET    /api/inventory/check    → 低庫存警示（專用 endpoint）
-```
+食材（4支）
+  GET /api/ingredients
+  POST /api/ingredients
+  PUT /api/ingredients/[name]
+  DELETE /api/ingredients/[name]
 
----
+進貨單（6支）
+  GET /api/purchase-orders
+  POST /api/purchase-orders
+  PUT /api/purchase-orders/[id]
+  DELETE /api/purchase-orders/[id]
+  POST /api/purchase-orders/auto-restock
+  POST /api/purchase-orders/[id]/receive
 
-## 10. 待實作 API 清單
-
-| API | 優先順序 | 說明 |
-|-----|---------|------|
-| `GET /api/menu` | 高 | 前台目前是 MOCK_MENU |
-| `POST /api/menu` | 高 | 後台新增品項需要 |
-| `GET /api/inventory` | 中 | 後台庫存頁需要 |
-| `PUT /api/inventory/:id` | 中 | 調整庫存數量 |
-| `GET /api/inventory/check` | 低 | 低庫存警示 |
-| `lib/db.js → lib/db.ts` | 高 | 所有 TS route 都引用它 |
-| `POST /api/orders` (TS版) | 中 | 目前是 JS 版 |
-
----
-
-## 11. 如何驗證你的 API
-
-### 11.1 快速檢查清單
-
-```bash
-# 1. 確認伺服器在跑
-curl http://localhost:3100
-
-# 2. 確認 API 返回正確 JSON 格式
-curl http://localhost:3100/api/menu | python3 -m json.tool
-
-# 3. 確認錯誤處理（傳錯誤參數）
-curl -X POST http://localhost:3100/api/menu \
-  -H "Content-Type: application/json" \
-  -d '{"name": ""}'   # 缺少必填欄位 → 400
-```
-
-### 11.2 錯誤訊息檢查
-
-| 情境 | 預期 HTTP Status | 預期 success |
-|------|-----------------|-------------|
-| 正常 | 200 / 201 | `true` |
-| 缺少必填欄位 | 400 | `false` + error 訊息 |
-| 找不到資源 | 404 | `false` + error 訊息 |
-| 伺服器錯誤 | 500 | `false` + error 訊息 |
-
----
-
-## 12. 常見錯誤與修復
-
-| 錯誤 | 原因 | 修復方式 |
-|------|------|---------|
-| `Cannot find module '@/lib/db'` | `next.config.js` 的 import alias 設定錯誤 | 確認 `paths: { "@/*": ["./*"] }` |
-| `SQLITE_BUSY` | 同時多個寫入請求 | 確保一次只有一個 `npm run dev` 實例 |
-| `no such table: menu_item` | 資料庫未初始化 | `sqlite3 data/jinhaoke.db < lib/schema.sql` |
-| `err instanceof Error` 回傳 false | 錯誤不是 Error 實體（如字串）| 加 `(err instanceof Error ? err.message : String(err))` |
-| TS 型別錯誤（strict mode）| `strict: true` 會檢查所有變數型別 | 確保所有區域變數都有明確型別 |
-
----
-
-## 13. Pre-Ship Checklist（API 實作前必檢查）
-
-```
-□  型別定義：每個 request/response 都有明確的 interface
-□  400 處理：缺少必填欄位會正確回傳 400
-□  500 處理：catch 區塊安全地回傳錯誤（不暴露 stack）
-□  201 vs 200：POST 建立成功回 201，GET 成功回 200
-□  SQL 保留字：`"order"` 有雙引號包住
-□  時間：SQL 用 `datetime('now', '+8 hours')`（SQLite 無時區）
-□  curl 測試：每個 endpoint 都用 curl 驗證過
-□  `err instanceof Error`：安全地處理未知錯誤型別
+報表（2支）
+  GET /api/reports/daily
+  GET /api/reports/monthly
 ```
 
 ---
 
-## 14. 下一步
+## 15. 遇到問題時的思路
 
-1. **實作 `GET /api/menu`** → 前台串 API 替換 MOCK_MENU
-2. **將 `lib/db.js` 改為 `lib/db.ts`** → 統一 TS 化
-3. **實作庫存相關 API** → 後台庫存頁需要
-4. **將 `app/api/orders/route.js` 改為 TS 版** → 統一是 JS 還是 TS
+```
+1. 跑不起來 → 先看 terminal 錯誤訊息
+2. API 404   → 確認檔案路徑正確：app/api/xxx/route.ts
+3. 資料沒進 DB → 先用 DBeaver 直接看 jinhaoke.db 有沒有資料
+4. POST Body 取不到 → 確認 Content-Type: application/json
+5. SQLite 錯誤 → 把 SQL 語法複製到 DBeaver 的 SQL Editor 直接跑一次
+```
