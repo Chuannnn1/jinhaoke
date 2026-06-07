@@ -183,10 +183,7 @@ export default function CustomerOrderPage() {
       </aside>
 
       {/* ======== Main Wrapper ======== */}
-      <div
-        className="flex-1 flex flex-col transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ marginRight: cartOpen ? '380px' : '0px' }}
-      >
+      <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* ---- Top Bar ---- */}
         <header className="h-14 bg-white border-b border-border flex items-center justify-between px-6 shrink-0">
@@ -290,10 +287,19 @@ export default function CustomerOrderPage() {
         </button>
       )}
 
-      {/* ======== Cart Panel（永遠在 DOM，用 translateX 控制進出） ======== */}
+      {/* ======== Cart backdrop ======== */}
       <div
-        className="fixed top-0 right-0 h-screen w-[380px] bg-white shadow-xl flex flex-col transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ transform: cartOpen ? 'translateX(0)' : 'translateX(100%)' }}
+        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-200 ${
+          cartOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setCartOpen(false)}
+      />
+
+      {/* ======== Cart Panel ======== */}
+      <div
+        className={`fixed top-0 right-0 h-screen w-[380px] bg-white shadow-xl flex flex-col z-50 transition-transform duration-300 ease-out ${
+          cartOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
       >
         {/* Cart Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
