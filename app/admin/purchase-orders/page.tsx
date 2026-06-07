@@ -135,43 +135,8 @@ export default function PurchaseOrdersPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-
-      {/* Sidebar */}
-      <aside className="w-[220px] bg-charcoal-900 flex flex-col shrink-0">
-        <div className="px-6 py-6 border-b border-white/5">
-          <h1 className="text-gold-400 font-display text-xl font-semibold tracking-wide">
-            金濠客食堂
-          </h1>
-          <p className="text-charcoal-700 text-[11px] mt-1 tracking-wider uppercase font-body">
-            Jinhaoke
-          </p>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {[
-            { label: '儀表板',   href: '/admin/dashboard',    active: false },
-            { label: '訂單',     href: '/admin',              active: false },
-            { label: '庫存',     href: '/admin/inventory',     active: false },
-            { label: '採購',     href: '/admin/purchase-orders', active: true  },
-          ].map(item => (
-            <a
-              key={item.label}
-              href={item.href}
-              className={`w-full text-left px-4 py-2.5 rounded-md text-sm transition-all duration-200 border-l-[3px] ${
-                item.active
-                  ? 'text-gold-400 border-l-gold-400 bg-gold-400/10'
-                  : 'text-white/65 border-l-transparent hover:text-white/90 hover:bg-charcoal-800'
-              }`}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
+    <>
+      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
           <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
             採購管理
           </h2>
@@ -350,8 +315,7 @@ export default function PurchaseOrdersPage() {
               </div>
             </div>
           )}
-        </main>
-      </div>
-    </div>
+      </main>
+    </>
   )
 }
