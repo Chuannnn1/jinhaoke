@@ -205,7 +205,10 @@ export default function CustomerOrderPage() {
         </header>
 
         {/* ---- Content ---- */}
-        <main className="flex-1 overflow-auto p-6 bg-gray-50">
+        <main
+          className="flex-1 overflow-auto p-6 bg-gray-50 transition-[padding] duration-300 ease-out"
+          style={{ paddingRight: cartOpen ? '404px' : undefined }}
+        >
 
           {/* 載入中 */}
           {menuLoading && (
@@ -287,17 +290,9 @@ export default function CustomerOrderPage() {
         </button>
       )}
 
-      {/* ======== Cart backdrop ======== */}
-      <div
-        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-200 ${
-          cartOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-        onClick={() => setCartOpen(false)}
-      />
-
       {/* ======== Cart Panel ======== */}
       <div
-        className={`fixed top-0 right-0 h-screen w-[380px] bg-white shadow-xl flex flex-col z-50 transition-transform duration-300 ease-out ${
+        className={`fixed top-0 right-0 h-screen w-[380px] bg-white border-l border-border flex flex-col z-40 transition-transform duration-300 ease-out ${
           cartOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
