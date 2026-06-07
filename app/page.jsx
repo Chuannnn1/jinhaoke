@@ -232,7 +232,7 @@ export default function CustomerOrderPage() {
                     <button
                       key={item.item_id}
                       onClick={() => addToCart(item)}
-                      className="bg-white border border-border rounded-lg text-left flex flex-col h-full overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
+                      className="bg-white border border-border rounded-lg text-left flex flex-col h-full overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-150"
                     >
                       <div className="h-24 bg-gray-50 flex items-center justify-center text-3xl select-none">
                         {item.emoji || '🍱'}
