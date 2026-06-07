@@ -54,10 +54,9 @@ module.exports = {
         },
       },
       fontFamily: {
-        display: ['"Playfair Display"', 'serif'],
-        body: ['"DM Sans"', 'sans-serif'],
+        display: ['"Noto Sans TC"', 'sans-serif'],
+        body: ['"Noto Sans TC"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
-        tc: ['"PingFang TC"', '"Microsoft JhengHei"', 'sans-serif'],
       },
       borderRadius: {
         sm: '8px',

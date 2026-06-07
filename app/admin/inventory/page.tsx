@@ -78,22 +78,22 @@ export default function InventoryPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-        <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 shrink-0">
+        <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           庫存管理
         </h2>
         <button
           onClick={fetchInventory}
-          className="text-[12px] text-charcoal-900/40 hover:text-gold-500 transition-colors font-mono"
+          className="text-[12px] text-ink/40 hover:text-clay transition-colors font-mono"
         >
           重新整理
         </button>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 bg-gold-50">
+      <main className="flex-1 overflow-auto p-6 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-charcoal-900/30">載入中…</p>
+              <p className="text-ink/30">載入中…</p>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center h-64">
@@ -104,8 +104,8 @@ export default function InventoryPage() {
               {/* 摘要卡片 */}
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                  <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">總品項</span>
-                  <p className="text-2xl font-bold text-charcoal-900 mt-1">{totalItems}</p>
+                  <span className="text-xs text-ink/40 uppercase tracking-wide">總品項</span>
+                  <p className="text-2xl font-bold text-ink mt-1">{totalItems}</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-sm px-5 py-4">
                   <span className="text-xs text-yellow-600 uppercase tracking-wide">庫存偏低</span>
@@ -124,7 +124,7 @@ export default function InventoryPage() {
                   placeholder="搜尋品名…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="px-3 py-2 border border-gold-200 rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-gold-400"
+                  className="px-3 py-2 border border-border rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-clay"
                 />
                 <div className="flex flex-wrap gap-2">
                   {CATEGORIES.map(cat => (
@@ -133,8 +133,8 @@ export default function InventoryPage() {
                       onClick={() => setActiveCategory(cat)}
                       className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                         activeCategory === cat
-                          ? 'bg-gold-500 text-white'
-                          : 'bg-white text-charcoal-900/60 border border-gold-200 hover:bg-gold-50'
+                          ? 'bg-gray-500 text-white'
+                          : 'bg-white text-ink/60 border border-border hover:bg-gray-50'
                       }`}
                     >
                       {cat}
@@ -147,7 +147,7 @@ export default function InventoryPage() {
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gold-50 text-charcoal-900/50 text-left text-xs uppercase tracking-wide">
+                    <tr className="bg-gray-50 text-ink/50 text-left text-xs uppercase tracking-wide">
                       <th className="px-4 py-3 font-medium">品名</th>
                       <th className="px-4 py-3 font-medium text-right">目前庫存</th>
                       <th className="px-4 py-3 font-medium text-right">安全存量</th>
@@ -164,23 +164,23 @@ export default function InventoryPage() {
                       return (
                         <tr
                           key={item.name}
-                          className={`border-t border-gold-100 hover:bg-gold-50/50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gold-50/20'}`}
+                          className={`border-t border-gray-200 hover:bg-gray-50/50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'}`}
                         >
-                          <td className="px-4 py-3 font-medium text-charcoal-900">{item.name}</td>
-                          <td className="px-4 py-3 text-right font-mono text-charcoal-900">
-                            {item.stock_qty} <span className="text-charcoal-900/40 text-xs">{item.stock_unit}</span>
+                          <td className="px-4 py-3 font-medium text-ink">{item.name}</td>
+                          <td className="px-4 py-3 text-right font-mono text-ink">
+                            {item.stock_qty} <span className="text-ink/40 text-xs">{item.stock_unit}</span>
                           </td>
-                          <td className="px-4 py-3 text-right text-charcoal-900/40 font-mono">
-                            {item.safety_stock} <span className="text-charcoal-900/30 text-xs">{item.stock_unit}</span>
+                          <td className="px-4 py-3 text-right text-ink/40 font-mono">
+                            {item.safety_stock} <span className="text-ink/30 text-xs">{item.stock_unit}</span>
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${status.color}`}>
                               {status.label}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-charcoal-900/50 text-xs">{cat}</td>
-                          <td className="px-4 py-3 text-charcoal-900/50 text-xs">{item.supplier_name ?? '—'}</td>
-                          <td className="px-4 py-3 text-right text-charcoal-900/40 text-xs">
+                          <td className="px-4 py-3 text-ink/50 text-xs">{cat}</td>
+                          <td className="px-4 py-3 text-ink/50 text-xs">{item.supplier_name ?? '—'}</td>
+                          <td className="px-4 py-3 text-right text-ink/40 text-xs">
                             {item.order_unit}（{item.qty_per_order_unit} {item.stock_unit}/{item.order_unit}）
                           </td>
                         </tr>
@@ -190,7 +190,7 @@ export default function InventoryPage() {
                 </table>
 
                 {filtered.length === 0 && (
-                  <div className="text-center py-12 text-charcoal-900/30">
+                  <div className="text-center py-12 text-ink/30">
                     {inventory.length === 0 ? '尚無庫存資料' : '沒有符合的品項'}
                   </div>
                 )}

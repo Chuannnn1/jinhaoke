@@ -96,19 +96,19 @@ export default function AdminOrderPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-        <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 shrink-0">
+        <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           當日訂單
         </h2>
-        <span className="text-[12px] text-charcoal-900/30 font-mono">
+        <span className="text-[12px] text-ink/30 font-mono">
           每 10 秒自動更新
         </span>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 bg-gold-50">
+      <main className="flex-1 overflow-auto p-6 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-charcoal-900/30">載入中…</p>
+              <p className="text-ink/30">載入中…</p>
             </div>
           ) : (
             <div className="grid grid-cols-5 gap-4 h-full">
@@ -124,13 +124,13 @@ export default function AdminOrderPage() {
                     onDrop={e => handleDrop(e, col.key)}
                     className={`flex flex-col rounded-xl border-2 transition-all duration-200 ${
                       dragOverCol === col.key
-                        ? `${col.color} border-dashed border-2 border-gold-400`
+                        ? `${col.color} border-dashed border-2 border-clay`
                         : `${col.color} border-solid`
                     }`}
                   >
                     {/* Column header */}
                     <div className="flex items-center justify-between px-4 py-3 shrink-0">
-                      <span className={`text-sm font-semibold font-body ${col.key === 'done' ? 'text-success' : 'text-charcoal-900'}`}>
+                      <span className={`text-sm font-semibold font-body ${col.key === 'done' ? 'text-success' : 'text-ink'}`}>
                         {col.label}
                       </span>
                       <span className={`w-6 h-6 rounded-full ${col.badge} text-[11px] font-bold flex items-center justify-center`}>
@@ -141,7 +141,7 @@ export default function AdminOrderPage() {
                     {/* Orders */}
                     <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
                       {colOrders.length === 0 ? (
-                        <p className="text-center text-[12px] text-charcoal-900/20 py-8">
+                        <p className="text-center text-[12px] text-ink/20 py-8">
                           暫無訂單
                         </p>
                       ) : (
@@ -153,18 +153,18 @@ export default function AdminOrderPage() {
                             className="bg-white rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
                           >
                             <div className="flex items-start justify-between mb-2">
-                              <p className="font-mono text-[12px] font-semibold text-charcoal-900">
+                              <p className="font-mono text-[12px] font-semibold text-ink">
                                 #{order.order_id}
                               </p>
-                              <p className="text-[11px] text-charcoal-900/30 font-mono">
+                              <p className="text-[11px] text-ink/30 font-mono">
                                 {order.created_at ? order.created_at.slice(11, 16) : ''}
                               </p>
                             </div>
-                            <p className="text-[12px] text-charcoal-900/60 mb-1">
-                              {order.items?.length ?? 0} 項 · <span className="font-mono text-gold-500 font-semibold">NT$ {order.total ?? 0}</span>
+                            <p className="text-[12px] text-ink/60 mb-1">
+                              {order.items?.length ?? 0} 項 · <span className="font-mono text-clay font-semibold">NT$ {order.total ?? 0}</span>
                             </p>
                             {order.note && (
-                              <p className="text-[11px] text-charcoal-900/30 italic truncate">
+                              <p className="text-[11px] text-ink/30 italic truncate">
                                 {order.note}
                               </p>
                             )}

@@ -21,24 +21,24 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className="w-[220px] bg-charcoal-900 flex flex-col shrink-0">
-        <div className="px-6 py-6 border-b border-white/5">
-          <h1 className="text-gold-400 font-display text-xl font-semibold tracking-wide">
+      <aside className="w-[200px] bg-white border-r border-border flex flex-col shrink-0">
+        <div className="px-5 py-5 border-b border-border">
+          <h1 className="text-ink font-body text-lg font-bold">
             金濠客食堂
           </h1>
-          <p className="text-charcoal-700 text-[11px] mt-1 tracking-wider uppercase font-body">
-            Jinhaoke
+          <p className="text-ink-mute text-[11px] mt-0.5 font-body">
+            後台管理
           </p>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-3 space-y-0.5">
           {NAV.map(item => (
             <a
               key={item.label}
               href={item.href}
-              className={`block px-4 py-2.5 rounded-md text-sm transition-all duration-200 border-l-[3px] ${
+              className={`block px-3 py-2 rounded-md text-sm transition-colors ${
                 isActive(item.href)
-                  ? 'text-gold-400 border-l-gold-400 bg-gold-400/10'
-                  : 'text-white/65 border-l-transparent hover:text-white/90 hover:bg-charcoal-800'
+                  ? 'font-medium text-clay bg-clay-soft'
+                  : 'text-ink-mute hover:text-ink hover:bg-gray-100'
               }`}
             >
               {item.label}

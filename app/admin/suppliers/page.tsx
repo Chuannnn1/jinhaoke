@@ -105,22 +105,22 @@ export default function SuppliersPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-        <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 shrink-0">
+        <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           供應商管理
         </h2>
         <button
           onClick={openNew}
-          className="px-4 py-2 bg-gold-500 text-white text-sm rounded-lg hover:bg-gold-600 transition-colors font-medium"
+          className="px-4 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-clay-deep transition-colors font-medium"
         >
           + 新增供應商
         </button>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 bg-gold-50">
+      <main className="flex-1 overflow-auto p-6 bg-gray-50">
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <p className="text-charcoal-900/30">載入中…</p>
+            <p className="text-ink/30">載入中…</p>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center h-64">
@@ -130,12 +130,12 @@ export default function SuppliersPage() {
           <>
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">供應商總數</span>
-                <p className="text-2xl font-bold text-charcoal-900 mt-1">{suppliers.length}</p>
+                <span className="text-xs text-ink/40 uppercase tracking-wide">供應商總數</span>
+                <p className="text-2xl font-bold text-ink mt-1">{suppliers.length}</p>
               </div>
               <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">篩選顯示</span>
-                <p className="text-2xl font-bold text-charcoal-900 mt-1">{filtered.length}</p>
+                <span className="text-xs text-ink/40 uppercase tracking-wide">篩選顯示</span>
+                <p className="text-2xl font-bold text-ink mt-1">{filtered.length}</p>
               </div>
             </div>
 
@@ -145,14 +145,14 @@ export default function SuppliersPage() {
                 placeholder="搜尋名稱或電話…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="px-3 py-2 border border-gold-200 rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-gold-400"
+                className="px-3 py-2 border border-border rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-clay"
               />
             </div>
 
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gold-50 text-charcoal-900/50 text-left text-xs uppercase tracking-wide">
+                  <tr className="bg-gray-50 text-ink/50 text-left text-xs uppercase tracking-wide">
                     <th className="px-4 py-3 font-medium">名稱</th>
                     <th className="px-4 py-3 font-medium">電話</th>
                     <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -162,17 +162,17 @@ export default function SuppliersPage() {
                   {filtered.map((s, idx) => (
                     <tr
                       key={s.name}
-                      className={`border-t border-gold-100 hover:bg-gold-50/50 transition-colors ${
-                        idx % 2 === 0 ? 'bg-white' : 'bg-gold-50/20'
+                      className={`border-t border-gray-200 hover:bg-gray-50/50 transition-colors ${
+                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                       }`}
                     >
-                      <td className="px-4 py-3 font-medium text-charcoal-900">{s.name}</td>
-                      <td className="px-4 py-3 text-charcoal-900/50 font-mono text-xs">{s.phone || '—'}</td>
+                      <td className="px-4 py-3 font-medium text-ink">{s.name}</td>
+                      <td className="px-4 py-3 text-ink/50 font-mono text-xs">{s.phone || '—'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => openEdit(s)}
-                            className="px-3 py-1 text-xs rounded-md border border-gold-300 text-gold-700 hover:bg-gold-50 transition-colors"
+                            className="px-3 py-1 text-xs rounded-md border border-border text-clay hover:bg-gray-50 transition-colors"
                           >
                             編輯
                           </button>
@@ -189,7 +189,7 @@ export default function SuppliersPage() {
                 </tbody>
               </table>
               {filtered.length === 0 && (
-                <div className="text-center py-12 text-charcoal-900/30">
+                <div className="text-center py-12 text-ink/30">
                   {suppliers.length === 0 ? '尚無供應商' : '沒有符合的結果'}
                 </div>
               )}
@@ -201,17 +201,17 @@ export default function SuppliersPage() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-            <div className="px-6 py-5 border-b border-gold-100 flex items-center justify-between">
-              <h3 className="font-semibold text-charcoal-900 text-base">
+            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="font-semibold text-ink text-base">
                 {editTarget ? `編輯「${editTarget.name}」` : '新增供應商'}
               </h3>
-              <button onClick={closeModal} className="text-charcoal-900/40 hover:text-charcoal-900 text-2xl leading-none">
+              <button onClick={closeModal} className="text-ink/40 hover:text-ink text-2xl leading-none">
                 ×
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
-                <label className="text-xs text-charcoal-900/50 mb-1 block">
+                <label className="text-xs text-ink/50 mb-1 block">
                   名稱 <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -220,34 +220,34 @@ export default function SuppliersPage() {
                   onChange={e => setFormName(e.target.value)}
                   disabled={!!editTarget}
                   placeholder="肉品大王"
-                  className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400 disabled:bg-gold-50 disabled:text-charcoal-900/40"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay disabled:bg-gray-50 disabled:text-ink/40"
                 />
                 {editTarget && (
-                  <p className="text-[11px] text-charcoal-900/30 mt-1">名稱為主鍵，無法修改</p>
+                  <p className="text-[11px] text-ink/30 mt-1">名稱為主鍵，無法修改</p>
                 )}
               </div>
               <div>
-                <label className="text-xs text-charcoal-900/50 mb-1 block">電話</label>
+                <label className="text-xs text-ink/50 mb-1 block">電話</label>
                 <input
                   type="text"
                   value={formPhone}
                   onChange={e => setFormPhone(e.target.value)}
                   placeholder="05-2200001"
-                  className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
               </div>
               {formError && (
                 <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{formError}</p>
               )}
             </div>
-            <div className="px-6 py-4 border-t border-gold-100 flex justify-end gap-3">
-              <button onClick={closeModal} className="px-4 py-2 text-sm text-charcoal-900/50 hover:text-charcoal-900 transition-colors">
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button onClick={closeModal} className="px-4 py-2 text-sm text-ink/50 hover:text-ink transition-colors">
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-5 py-2 bg-gold-500 text-white text-sm rounded-lg hover:bg-gold-600 transition-colors font-medium disabled:opacity-50"
+                className="px-5 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
               >
                 {submitting ? '儲存中…' : '儲存'}
               </button>

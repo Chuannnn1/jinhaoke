@@ -81,16 +81,16 @@ export default function DashboardPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center px-8 shrink-0">
-        <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center px-8 shrink-0">
+        <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           概覽
         </h2>
       </header>
 
-      <main className="flex-1 overflow-auto p-6 bg-gold-50">
+      <main className="flex-1 overflow-auto p-6 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-charcoal-900/30">載入中…</p>
+              <p className="text-ink/30">載入中…</p>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center h-64">
@@ -102,11 +102,11 @@ export default function DashboardPage() {
               {/* ── 今日營收 ── */}
               <div className="col-span-3">
                 <div className="bg-white rounded-xl shadow-sm p-5 h-full">
-                  <p className="text-xs text-charcoal-900/40 uppercase tracking-wide mb-3">今日營收</p>
-                  <p className="text-3xl font-bold text-charcoal-900 font-mono">
+                  <p className="text-xs text-ink/40 uppercase tracking-wide mb-3">今日營收</p>
+                  <p className="text-3xl font-bold text-ink font-mono">
                     NT$ {formatMoney(daily?.total_revenue ?? 0)}
                   </p>
-                  <p className="text-sm text-charcoal-900/40 mt-1">
+                  <p className="text-sm text-ink/40 mt-1">
                     {daily?.orders_count ?? 0} 筆訂單
                   </p>
                 </div>
@@ -115,11 +115,11 @@ export default function DashboardPage() {
               {/* ── 當月營收 ── */}
               <div className="col-span-3">
                 <div className="bg-white rounded-xl shadow-sm p-5 h-full">
-                  <p className="text-xs text-charcoal-900/40 uppercase tracking-wide mb-3">當月營收</p>
-                  <p className="text-3xl font-bold text-charcoal-900 font-mono">
+                  <p className="text-xs text-ink/40 uppercase tracking-wide mb-3">當月營收</p>
+                  <p className="text-3xl font-bold text-ink font-mono">
                     NT$ {formatMoney(monthly?.total_revenue ?? 0)}
                   </p>
-                  <p className="text-sm text-charcoal-900/40 mt-1">
+                  <p className="text-sm text-ink/40 mt-1">
                     均單 NT$ {formatMoney(monthly?.avg_per_order ?? 0)}
                   </p>
                 </div>
@@ -130,7 +130,7 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-xl shadow-sm p-5 h-full">
                   <p className="text-xs text-red-600 uppercase tracking-wide mb-3">庫存警示</p>
                   <p className="text-3xl font-bold text-red-600">{lowStockItems.length}</p>
-                  <p className="text-sm text-charcoal-900/40 mt-1">項食材低於安全存量</p>
+                  <p className="text-sm text-ink/40 mt-1">項食材低於安全存量</p>
                 </div>
               </div>
 
@@ -138,37 +138,37 @@ export default function DashboardPage() {
               <div className="col-span-3">
                 <div className="bg-white rounded-xl shadow-sm p-5 h-full">
                   <p className="text-xs text-amber-600 uppercase tracking-wide mb-3">待製作</p>
-                  <p className="text-3xl font-bold text-charcoal-900">
+                  <p className="text-3xl font-bold text-ink">
                     {recentOrders.filter(o => ['待製作','製作中'].includes(o.status)).length}
                   </p>
-                  <p className="text-sm text-charcoal-900/40 mt-1">筆訂單待處理</p>
+                  <p className="text-sm text-ink/40 mt-1">筆訂單待處理</p>
                 </div>
               </div>
 
               {/* ── 今日暢銷品項 ── */}
               <div className="col-span-6">
                 <div className="bg-white rounded-xl shadow-sm p-5">
-                  <p className="text-xs text-charcoal-900/40 uppercase tracking-wide mb-4">今日暢銷</p>
+                  <p className="text-xs text-ink/40 uppercase tracking-wide mb-4">今日暢銷</p>
                   {daily?.top_items && daily.top_items.length > 0 ? (
                     <div className="space-y-2">
                       {daily.top_items.map((item, i) => (
                         <div key={item.name} className="flex items-center gap-3">
                           <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                            i === 0 ? 'bg-gold-400 text-white' :
-                            i === 1 ? 'bg-charcoal-300 text-white' :
+                            i === 0 ? 'bg-clay text-white' :
+                            i === 1 ? 'bg-gray-400 text-white' :
                             i === 2 ? 'bg-amber-300 text-white' :
-                            'bg-gold-100 text-charcoal-900/40'
+                            'bg-clay-soft text-ink/40'
                           }`}>
                             {i + 1}
                           </span>
-                          <span className="flex-1 text-sm text-charcoal-900">{item.name}</span>
-                          <span className="text-xs text-charcoal-900/40 font-mono">{item.qty} 份</span>
-                          <span className="text-xs text-gold-500 font-mono">NT$ {formatMoney(item.revenue)}</span>
+                          <span className="flex-1 text-sm text-ink">{item.name}</span>
+                          <span className="text-xs text-ink/40 font-mono">{item.qty} 份</span>
+                          <span className="text-xs text-clay font-mono">NT$ {formatMoney(item.revenue)}</span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-charcoal-900/30 text-sm">今日尚無資料</p>
+                    <p className="text-ink/30 text-sm">今日尚無資料</p>
                   )}
                 </div>
               </div>
@@ -185,14 +185,14 @@ export default function DashboardPage() {
                         return (
                           <div key={item.name} className="flex items-center gap-3">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${isCritical ? 'bg-red-500' : 'bg-yellow-400'}`} />
-                            <span className="flex-1 text-sm text-charcoal-900">{item.name}</span>
-                            <span className="text-xs text-charcoal-900/50 font-mono">
+                            <span className="flex-1 text-sm text-ink">{item.name}</span>
+                            <span className="text-xs text-ink/50 font-mono">
                               {item.stock_qty} / {item.safety_stock} {item.stock_unit}
                             </span>
                           </div>
                         )
                       })}
-                      <a href="/admin/inventory" className="inline-block mt-2 text-xs text-gold-500 hover:underline">
+                      <a href="/admin/inventory" className="inline-block mt-2 text-xs text-clay hover:underline">
                         查看庫存頁面 →
                       </a>
                     </div>
@@ -205,12 +205,12 @@ export default function DashboardPage() {
               {/* ── 最近訂單 ── */}
               <div className="col-span-12">
                 <div className="bg-white rounded-xl shadow-sm p-5">
-                  <p className="text-xs text-charcoal-900/40 uppercase tracking-wide mb-4">最近訂單</p>
+                  <p className="text-xs text-ink/40 uppercase tracking-wide mb-4">最近訂單</p>
                   {recentOrders.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-charcoal-900/40 text-left text-xs uppercase">
+                          <tr className="text-ink/40 text-left text-xs uppercase">
                             <th className="pb-2 pr-4">單號</th>
                             <th className="pb-2 pr-4">顧客</th>
                             <th className="pb-2 pr-4">日期</th>
@@ -220,11 +220,11 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {recentOrders.map(order => (
-                            <tr key={order.order_id} className="border-t border-gold-100">
-                              <td className="py-2 pr-4 font-mono text-xs text-charcoal-900">{order.order_id}</td>
-                              <td className="py-2 pr-4 text-charcoal-900/70">{order.customer_name}</td>
-                              <td className="py-2 pr-4 text-charcoal-900/40 text-xs">{formatDate(order.created_at)}</td>
-                              <td className="py-2 pr-4 font-mono text-gold-600">NT$ {formatMoney(order.total)}</td>
+                            <tr key={order.order_id} className="border-t border-gray-200">
+                              <td className="py-2 pr-4 font-mono text-xs text-ink">{order.order_id}</td>
+                              <td className="py-2 pr-4 text-ink/70">{order.customer_name}</td>
+                              <td className="py-2 pr-4 text-ink/40 text-xs">{formatDate(order.created_at)}</td>
+                              <td className="py-2 pr-4 font-mono text-clay">NT$ {formatMoney(order.total)}</td>
                               <td className="py-2">
                                 <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[order.status] ?? 'bg-gray-100'}`}>
                                   {order.status}
@@ -236,7 +236,7 @@ export default function DashboardPage() {
                       </table>
                     </div>
                   ) : (
-                    <p className="text-charcoal-900/30 text-sm">尚無訂單</p>
+                    <p className="text-ink/30 text-sm">尚無訂單</p>
                   )}
                 </div>
               </div>

@@ -136,15 +136,15 @@ export default function PurchaseOrdersPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-          <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 shrink-0">
+          <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
             採購管理
           </h2>
           <div className="flex gap-2">
             <button
               onClick={() => setTab('list')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                tab === 'list' ? 'bg-gold-500 text-white' : 'bg-white text-charcoal-900/50 border border-gold-200'
+                tab === 'list' ? 'bg-gray-500 text-white' : 'bg-white text-ink/50 border border-border'
               }`}
             >
               進貨單列表
@@ -152,7 +152,7 @@ export default function PurchaseOrdersPage() {
             <button
               onClick={() => setTab('create')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                tab === 'create' ? 'bg-gold-500 text-white' : 'bg-white text-charcoal-900/50 border border-gold-200'
+                tab === 'create' ? 'bg-gray-500 text-white' : 'bg-white text-ink/50 border border-border'
               }`}
             >
               + 新建進貨單
@@ -160,28 +160,28 @@ export default function PurchaseOrdersPage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-6 bg-gold-50">
+        <main className="flex-1 overflow-auto p-6 bg-gray-50">
           {tab === 'list' ? (
             <div className="space-y-4">
               {loading ? (
                 <div className="flex items-center justify-center h-64">
-                  <p className="text-charcoal-900/30">載入中…</p>
+                  <p className="text-ink/30">載入中…</p>
                 </div>
               ) : orders.length === 0 ? (
-                <div className="text-center py-16 text-charcoal-900/30">
-                  尚無進貨單，<a href="/admin/dashboard" className="text-gold-500 hover:underline">至儀表板查看庫存警示</a>
+                <div className="text-center py-16 text-ink/30">
+                  尚無進貨單，<a href="/admin/dashboard" className="text-clay hover:underline">至儀表板查看庫存警示</a>
                 </div>
               ) : (
                 orders.map(po => (
                   <div key={po.po_id} className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-gold-100">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                       <div className="flex items-center gap-4">
                         <div>
-                          <p className="text-xs text-charcoal-900/40 uppercase tracking-wide">#{po.po_id}</p>
-                          <p className="text-sm font-semibold text-charcoal-900">{po.supplier_name}</p>
+                          <p className="text-xs text-ink/40 uppercase tracking-wide">#{po.po_id}</p>
+                          <p className="text-sm font-semibold text-ink">{po.supplier_name}</p>
                         </div>
-                        <div className="text-xs text-charcoal-900/40">{po.po_date}</div>
-                        <div className="text-sm font-mono text-gold-500">
+                        <div className="text-xs text-ink/40">{po.po_date}</div>
+                        <div className="text-sm font-mono text-clay">
                           NT$ {formatMoney(po.total_amount)}
                         </div>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[po.status] ?? 'bg-gray-100'}`}>
@@ -199,7 +199,7 @@ export default function PurchaseOrdersPage() {
                         )}
                         <button
                           onClick={() => setSelectedPo(selectedPo?.po_id === po.po_id ? null : po)}
-                          className="px-3 py-1.5 border border-gold-200 text-charcoal-900/60 rounded-lg text-xs hover:bg-gold-50 transition-colors"
+                          className="px-3 py-1.5 border border-border text-ink/60 rounded-lg text-xs hover:bg-gray-50 transition-colors"
                         >
                           {selectedPo?.po_id === po.po_id ? '收起' : '查看明細'}
                         </button>
@@ -207,10 +207,10 @@ export default function PurchaseOrdersPage() {
                     </div>
 
                     {selectedPo?.po_id === po.po_id && po.items && po.items.length > 0 && (
-                      <div className="px-5 py-3 bg-gold-50/50">
+                      <div className="px-5 py-3 bg-gray-50/50">
                         <table className="w-full text-xs">
                           <thead>
-                            <tr className="text-charcoal-900/40 text-left uppercase tracking-wide">
+                            <tr className="text-ink/40 text-left uppercase tracking-wide">
                               <th className="pb-1">食材</th>
                               <th className="pb-1 text-right">叫貨數量</th>
                               <th className="pb-1 text-right">成本</th>
@@ -218,10 +218,10 @@ export default function PurchaseOrdersPage() {
                           </thead>
                           <tbody>
                             {po.items.map(item => (
-                              <tr key={item.ingredient_name} className="border-t border-gold-100">
-                                <td className="py-1.5 text-charcoal-900">{item.ingredient_name}</td>
+                              <tr key={item.ingredient_name} className="border-t border-gray-200">
+                                <td className="py-1.5 text-ink">{item.ingredient_name}</td>
                                 <td className="py-1.5 text-right font-mono">{item.order_qty}</td>
-                                <td className="py-1.5 text-right font-mono text-gold-500">NT$ {formatMoney(item.total_cost)}</td>
+                                <td className="py-1.5 text-right font-mono text-clay">NT$ {formatMoney(item.total_cost)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -236,14 +236,14 @@ export default function PurchaseOrdersPage() {
             /* ── 新建進貨單表單 ── */
             <div className="max-w-2xl">
               <div className="bg-white rounded-xl shadow-sm p-6">
-                <h3 className="text-sm font-semibold text-charcoal-900 mb-5">新建進貨單</h3>
+                <h3 className="text-sm font-semibold text-ink mb-5">新建進貨單</h3>
 
                 <div className="mb-5">
-                  <label className="block text-xs text-charcoal-900/50 uppercase tracking-wide mb-1">供應商</label>
+                  <label className="block text-xs text-ink/50 uppercase tracking-wide mb-1">供應商</label>
                   <select
                     value={newSupplier}
                     onChange={e => setNewSupplier(e.target.value)}
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400 bg-white"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay bg-white"
                   >
                     <option value="">請選擇供應商</option>
                     {suppliers.map(s => (
@@ -254,10 +254,10 @@ export default function PurchaseOrdersPage() {
 
                 <div className="mb-5">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs text-charcoal-900/50 uppercase tracking-wide">進貨品項</label>
+                    <label className="block text-xs text-ink/50 uppercase tracking-wide">進貨品項</label>
                     <button
                       onClick={addItemRow}
-                      className="text-xs text-gold-500 hover:underline"
+                      className="text-xs text-clay hover:underline"
                     >
                       + 新增品項
                     </button>
@@ -270,26 +270,26 @@ export default function PurchaseOrdersPage() {
                           placeholder="食材名稱"
                           value={item.ingredient_name}
                           onChange={e => updateItem(idx, 'ingredient_name', e.target.value)}
-                          className="flex-1 px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                          className="flex-1 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                         />
                         <input
                           type="number"
                           placeholder="數量"
                           value={item.order_qty}
                           onChange={e => updateItem(idx, 'order_qty', e.target.value)}
-                          className="w-24 px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                          className="w-24 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                         />
                         <input
                           type="number"
                           placeholder="成本"
                           value={item.total_cost}
                           onChange={e => updateItem(idx, 'total_cost', e.target.value)}
-                          className="w-28 px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                          className="w-28 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                         />
                         {newItems.length > 1 && (
                           <button
                             onClick={() => removeItem(idx)}
-                            className="text-charcoal-900/30 hover:text-red-500 transition-colors"
+                            className="text-ink/30 hover:text-red-500 transition-colors"
                           >
                             ✕
                           </button>
@@ -308,7 +308,7 @@ export default function PurchaseOrdersPage() {
                 <button
                   onClick={handleCreate}
                   disabled={submitting}
-                  className="w-full py-2.5 bg-gold-500 text-white rounded-lg text-sm font-semibold hover:bg-gold-600 transition-colors disabled:opacity-50"
+                  className="w-full py-2.5 bg-gray-500 text-white rounded-lg text-sm font-semibold hover:bg-clay-deep transition-colors disabled:opacity-50"
                 >
                   {submitting ? '建立中…' : '建立進貨單'}
                 </button>

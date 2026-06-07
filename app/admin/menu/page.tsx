@@ -148,22 +148,22 @@ export default function MenuPage() {
 
   return (
     <>
-      <header className="h-16 bg-cream border-b border-gold-200 flex items-center justify-between px-8 shrink-0">
-        <h2 className="text-charcoal-900 font-body font-semibold text-sm tracking-wide">
+      <header className="h-16 bg-white border-b border-border flex items-center justify-between px-8 shrink-0">
+        <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           菜單管理
           </h2>
           <button
             onClick={openNew}
-            className="px-4 py-2 bg-gold-500 text-white text-sm rounded-lg hover:bg-gold-600 transition-colors font-medium"
+            className="px-4 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-clay-deep transition-colors font-medium"
           >
             + 新增品項
           </button>
         </header>
 
-        <main className="flex-1 overflow-auto p-6 bg-gold-50">
+        <main className="flex-1 overflow-auto p-6 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <p className="text-charcoal-900/30">載入中…</p>
+              <p className="text-ink/30">載入中…</p>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center h-64">
@@ -174,16 +174,16 @@ export default function MenuPage() {
               {/* Stats */}
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                  <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">上架品項</span>
-                  <p className="text-2xl font-bold text-charcoal-900 mt-1">{totalItems}</p>
+                  <span className="text-xs text-ink/40 uppercase tracking-wide">上架品項</span>
+                  <p className="text-2xl font-bold text-ink mt-1">{totalItems}</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                  <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">分類數</span>
-                  <p className="text-2xl font-bold text-charcoal-900 mt-1">{categoryCount}</p>
+                  <span className="text-xs text-ink/40 uppercase tracking-wide">分類數</span>
+                  <p className="text-2xl font-bold text-ink mt-1">{categoryCount}</p>
                 </div>
                 <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-                  <span className="text-xs text-charcoal-900/40 uppercase tracking-wide">篩選顯示</span>
-                  <p className="text-2xl font-bold text-charcoal-900 mt-1">{filtered.length}</p>
+                  <span className="text-xs text-ink/40 uppercase tracking-wide">篩選顯示</span>
+                  <p className="text-2xl font-bold text-ink mt-1">{filtered.length}</p>
                 </div>
               </div>
 
@@ -194,7 +194,7 @@ export default function MenuPage() {
                   placeholder="搜尋品名…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="px-3 py-2 border border-gold-200 rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-gold-400"
+                  className="px-3 py-2 border border-border rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-clay"
                 />
                 <div className="flex gap-2">
                   {CATEGORIES.map(cat => (
@@ -203,8 +203,8 @@ export default function MenuPage() {
                       onClick={() => setActiveCategory(cat)}
                       className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                         activeCategory === cat
-                          ? 'bg-gold-500 text-white'
-                          : 'bg-white text-charcoal-900/60 border border-gold-200 hover:bg-gold-50'
+                          ? 'bg-gray-500 text-white'
+                          : 'bg-white text-ink/60 border border-border hover:bg-gray-50'
                       }`}
                     >
                       {cat}
@@ -217,7 +217,7 @@ export default function MenuPage() {
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gold-50 text-charcoal-900/50 text-left text-xs uppercase tracking-wide">
+                    <tr className="bg-gray-50 text-ink/50 text-left text-xs uppercase tracking-wide">
                       <th className="px-4 py-3 font-medium w-10 text-center"></th>
                       <th className="px-4 py-3 font-medium">品名</th>
                       <th className="px-4 py-3 font-medium">分類</th>
@@ -231,36 +231,36 @@ export default function MenuPage() {
                     {filtered.map((item, idx) => (
                       <tr
                         key={item.item_id}
-                        className={`border-t border-gold-100 hover:bg-gold-50/50 transition-colors ${
-                          idx % 2 === 0 ? 'bg-white' : 'bg-gold-50/20'
+                        className={`border-t border-gray-200 hover:bg-gray-50/50 transition-colors ${
+                          idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                         }`}
                       >
                         <td className="px-4 py-3 text-xl text-center leading-none">{item.emoji || '—'}</td>
                         <td className="px-4 py-3">
-                          <span className="font-medium text-charcoal-900">{item.name}</span>
+                          <span className="font-medium text-ink">{item.name}</span>
                           {item.description && (
-                            <p className="text-xs text-charcoal-900/40 mt-0.5 truncate max-w-[180px]">
+                            <p className="text-xs text-ink/40 mt-0.5 truncate max-w-[180px]">
                               {item.description}
                             </p>
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs bg-gold-100 text-gold-700 font-medium">
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-clay-soft text-clay font-medium">
                             {item.category}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-charcoal-900/50 text-xs">{item.tag || '—'}</td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-charcoal-900">
+                        <td className="px-4 py-3 text-ink/50 text-xs">{item.tag || '—'}</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-ink">
                           ${item.price}
                         </td>
-                        <td className="px-4 py-3 text-xs text-charcoal-900/50">
+                        <td className="px-4 py-3 text-xs text-ink/50">
                           {[item.sub, item.option].filter(Boolean).join(' · ') || '—'}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
                             <button
                               onClick={() => openEdit(item)}
-                              className="px-3 py-1 text-xs rounded-md border border-gold-300 text-gold-700 hover:bg-gold-50 transition-colors"
+                              className="px-3 py-1 text-xs rounded-md border border-border text-clay hover:bg-gray-50 transition-colors"
                             >
                               編輯
                             </button>
@@ -278,7 +278,7 @@ export default function MenuPage() {
                 </table>
 
                 {filtered.length === 0 && (
-                  <div className="text-center py-12 text-charcoal-900/30">
+                  <div className="text-center py-12 text-ink/30">
                     {items.length === 0 ? '尚無品項' : '沒有符合的品項'}
                   </div>
                 )}
@@ -291,13 +291,13 @@ export default function MenuPage() {
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-            <div className="px-6 py-5 border-b border-gold-100 flex items-center justify-between">
-              <h3 className="font-semibold text-charcoal-900 text-base">
+            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="font-semibold text-ink text-base">
                 {editTarget ? `編輯「${editTarget.name}」` : '新增品項'}
               </h3>
               <button
                 onClick={closeModal}
-                className="text-charcoal-900/40 hover:text-charcoal-900 text-2xl leading-none"
+                className="text-ink/40 hover:text-ink text-2xl leading-none"
               >
                 ×
               </button>
@@ -307,17 +307,17 @@ export default function MenuPage() {
               {/* emoji + name */}
               <div className="flex gap-3">
                 <div className="w-20">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">Emoji</label>
+                  <label className="text-xs text-ink/50 mb-1 block">Emoji</label>
                   <input
                     type="text"
                     value={form.emoji}
                     onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))}
                     placeholder="🍱"
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-clay"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">
+                  <label className="text-xs text-ink/50 mb-1 block">
                     品名 <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -325,7 +325,7 @@ export default function MenuPage() {
                     value={form.name}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                     placeholder="酥炸豬排便當"
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                   />
                 </div>
               </div>
@@ -333,13 +333,13 @@ export default function MenuPage() {
               {/* category + price */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">
+                  <label className="text-xs text-ink/50 mb-1 block">
                     分類 <span className="text-red-400">*</span>
                   </label>
                   <select
                     value={form.category}
                     onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
                   >
                     {MENU_CATEGORIES.map(c => (
                       <option key={c} value={c}>{c}</option>
@@ -347,7 +347,7 @@ export default function MenuPage() {
                   </select>
                 </div>
                 <div className="w-28">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">
+                  <label className="text-xs text-ink/50 mb-1 block">
                     價格 <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -355,56 +355,56 @@ export default function MenuPage() {
                     value={form.price}
                     onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
                     min={1}
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
                   />
                 </div>
               </div>
 
               {/* tag */}
               <div>
-                <label className="text-xs text-charcoal-900/50 mb-1 block">標籤</label>
+                <label className="text-xs text-ink/50 mb-1 block">標籤</label>
                 <input
                   type="text"
                   value={form.tag}
                   onChange={e => setForm(f => ({ ...f, tag: e.target.value }))}
                   placeholder="豬、雞、魚…"
-                  className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
               </div>
 
               {/* sub + option */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">副標題</label>
+                  <label className="text-xs text-ink/50 mb-1 block">副標題</label>
                   <input
                     type="text"
                     value={form.sub}
                     onChange={e => setForm(f => ({ ...f, sub: e.target.value }))}
                     placeholder="扁鱈"
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs text-charcoal-900/50 mb-1 block">選項</label>
+                  <label className="text-xs text-ink/50 mb-1 block">選項</label>
                   <input
                     type="text"
                     value={form.option}
                     onChange={e => setForm(f => ({ ...f, option: e.target.value }))}
                     placeholder="加辣+10"
-                    className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                   />
                 </div>
               </div>
 
               {/* description */}
               <div>
-                <label className="text-xs text-charcoal-900/50 mb-1 block">描述</label>
+                <label className="text-xs text-ink/50 mb-1 block">描述</label>
                 <textarea
                   value={form.description}
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   rows={2}
                   placeholder="簡短說明…"
-                  className="w-full px-3 py-2 border border-gold-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gold-400"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-clay"
                 />
               </div>
 
@@ -413,17 +413,17 @@ export default function MenuPage() {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-gold-100 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-charcoal-900/50 hover:text-charcoal-900 transition-colors"
+                className="px-4 py-2 text-sm text-ink/50 hover:text-ink transition-colors"
               >
                 取消
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-5 py-2 bg-gold-500 text-white text-sm rounded-lg hover:bg-gold-600 transition-colors font-medium disabled:opacity-50"
+                className="px-5 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
               >
                 {submitting ? '儲存中…' : '儲存'}
               </button>
