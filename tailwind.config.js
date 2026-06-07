@@ -37,6 +37,21 @@ module.exports = {
           soft: 'var(--color-border-soft)',
           moss: 'var(--color-border-moss)',
         },
+        charcoal: {
+          300: '#A8A29E',
+          700: '#57534E',
+          800: '#292524',
+          900: '#1C1917',
+        },
+        gold: {
+          50:  '#FFFBEB',
+          100: '#FEF3C7',
+          200: '#FDE68A',
+          400: '#D4A847',
+          500: '#B8860B',
+          600: '#996F09',
+          700: '#7A5807',
+        },
       },
       fontFamily: {
         display: ['"Playfair Display"', 'serif'],
