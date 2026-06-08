@@ -7,7 +7,6 @@ const NAV = [
   { label: '庫存',     href: '/admin/inventory' },
   { label: '菜單管理', href: '/admin/menu' },
   { label: '採購',     href: '/admin/purchase-orders' },
-  { label: '供應商',   href: '/admin/suppliers' },
   { label: '報表',     href: '/admin/reports' },
 ]
 

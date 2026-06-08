@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
 // ============================================================
-// [id]/route.ts — 單筆操作（查詢、修改、刪除）
-// 對應：GET /api/menu/:id
-//       PUT /api/menu/:id
-//       DELETE /api/menu/:id
+// [id]/route.ts — 單筆操作（查詢、修改、軟刪除、上下架切換）
+// 對應：GET    /api/menu/:id
+//       PUT    /api/menu/:id
+//       PATCH  /api/menu/:id  — 切換 is_active
+//       DELETE /api/menu/:id  — 軟刪除（is_active=0）
 // ============================================================
 
 interface MenuItem {
@@ -19,6 +20,7 @@ interface MenuItem {
   option: string
   description: string
   is_active: number
+  image_url: string
 }
 
 interface UpdateMenuBody {
@@ -30,6 +32,11 @@ interface UpdateMenuBody {
   sub?: string
   option?: string
   description?: string
+  is_active?: number
+  image_url?: string
+}
+
+interface PatchBody {
   is_active?: number
 }
 
@@ -58,7 +65,7 @@ export async function GET(
     }
 
     const item = db.prepare(
-      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active FROM menu_item WHERE item_id = ?'
+      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url FROM menu_item WHERE item_id = ?'
     ).get(id) as MenuItem | undefined
 
     if (!item) {
@@ -96,7 +103,6 @@ export async function PUT(
       )
     }
 
-    // 檢查品項是否存在
     const existing = db.prepare(
       'SELECT item_id FROM menu_item WHERE item_id = ?'
     ).get(id)
@@ -110,19 +116,19 @@ export async function PUT(
 
     const body: UpdateMenuBody = await req.json()
 
-    // 動態組裝 UPDATE 語句（只更新有傳的欄位）
     const fields: string[] = []
     const values: (string | number)[] = []
 
-    if (body.name !== undefined)       { fields.push('name = ?');           values.push(body.name) }
-    if (body.category !== undefined)    { fields.push('category = ?');         values.push(body.category) }
-    if (body.price !== undefined)       { fields.push('price = ?');           values.push(body.price) }
-    if (body.emoji !== undefined)       { fields.push('emoji = ?');           values.push(body.emoji) }
-    if (body.tag !== undefined)         { fields.push('tag = ?');             values.push(body.tag) }
-    if (body.sub !== undefined)         { fields.push('sub = ?');             values.push(body.sub) }
-    if (body.option !== undefined)      { fields.push('option = ?');          values.push(body.option) }
-    if (body.description !== undefined){ fields.push('description = ?');      values.push(body.description) }
-    if (body.is_active !== undefined)   { fields.push('is_active = ?');       values.push(body.is_active) }
+    if (body.name !== undefined)        { fields.push('name = ?');        values.push(body.name) }
+    if (body.category !== undefined)    { fields.push('category = ?');    values.push(body.category) }
+    if (body.price !== undefined)       { fields.push('price = ?');       values.push(body.price) }
+    if (body.emoji !== undefined)       { fields.push('emoji = ?');       values.push(body.emoji) }
+    if (body.tag !== undefined)         { fields.push('tag = ?');         values.push(body.tag) }
+    if (body.sub !== undefined)         { fields.push('sub = ?');         values.push(body.sub) }
+    if (body.option !== undefined)      { fields.push('option = ?');      values.push(body.option) }
+    if (body.description !== undefined) { fields.push('description = ?'); values.push(body.description) }
+    if (body.is_active !== undefined)   { fields.push('is_active = ?');   values.push(body.is_active) }
+    if (body.image_url !== undefined)   { fields.push('image_url = ?');   values.push(body.image_url) }
 
     if (fields.length === 0) {
       return NextResponse.json<ApiResponse>(
@@ -131,7 +137,7 @@ export async function PUT(
       )
     }
 
-    values.push(id) // WHERE clause
+    values.push(id)
     db.prepare(`UPDATE menu_item SET ${fields.join(', ')} WHERE item_id = ?`).run(...values)
 
     return NextResponse.json({ success: true })
@@ -145,7 +151,56 @@ export async function PUT(
 }
 
 // ============================================================
-// DELETE /api/menu/:id — 刪除品項（軟刪除）
+// PATCH /api/menu/:id — 切換上下架狀態
+// body: { is_active: 0 | 1 }
+// ============================================================
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const db = getDb()
+    const id = parseInt(params.id, 10)
+
+    if (isNaN(id)) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: '無效的品項 ID' },
+        { status: 400 }
+      )
+    }
+
+    const existing = db.prepare(
+      'SELECT item_id FROM menu_item WHERE item_id = ?'
+    ).get(id)
+
+    if (!existing) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: '找不到品項' },
+        { status: 404 }
+      )
+    }
+
+    const body: PatchBody = await req.json()
+    if (body.is_active !== 0 && body.is_active !== 1) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: 'is_active 必須為 0 或 1' },
+        { status: 400 }
+      )
+    }
+
+    db.prepare('UPDATE menu_item SET is_active = ? WHERE item_id = ?').run(body.is_active, id)
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[PATCH /api/menu/:id]', err)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+      { status: 500 }
+    )
+  }
+}
+
+// ============================================================
+// DELETE /api/menu/:id — 軟刪除（is_active=0）
 // ============================================================
 export async function DELETE(
   _req: Request,
@@ -173,7 +228,6 @@ export async function DELETE(
       )
     }
 
-    // 軟刪除：is_active 設為 0，不影響歷史訂單
     db.prepare('UPDATE menu_item SET is_active = 0 WHERE item_id = ?').run(id)
 
     return NextResponse.json({ success: true })

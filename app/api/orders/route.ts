@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db'
+import { computeAvailability } from '@/lib/availability'
 import { NextResponse } from 'next/server'
 
 // ============================================================
@@ -114,6 +115,21 @@ export async function POST(request: Request) {
     if (!items || items.length === 0) {
       return NextResponse.json(
         { success: false, error: '購物車是空的' },
+        { status: 400 }
+      )
+    }
+
+    // 預檢可售性：任一品項 blocked 直接擋下
+    const availability = computeAvailability()
+    const availMap = new Map(availability.map(a => [a.item_id, a]))
+    const blockedNames: string[] = []
+    for (const item of items) {
+      const a = availMap.get(item.item_id)
+      if (a && a.blocked) blockedNames.push(a.name)
+    }
+    if (blockedNames.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `品項已售完：${blockedNames.join(', ')}` },
         { status: 400 }
       )
     }

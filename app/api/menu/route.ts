@@ -16,6 +16,7 @@ interface MenuItem {
   option: string
   description: string
   is_active: number
+  image_url: string
 }
 
 interface CreateMenuBody {
@@ -28,6 +29,7 @@ interface CreateMenuBody {
   option?: string
   description?: string
   is_active?: number
+  image_url?: string
 }
 
 interface ApiResponse<T = unknown> {
@@ -38,30 +40,41 @@ interface ApiResponse<T = unknown> {
 
 // ============================================================
 // GET /api/menu — 查詢全部（可依分類篩選）
+// query：
+//   category=...        — 依分類篩選
+//   include_inactive=1  — 連同已下架品項一併回傳
 // ============================================================
 export async function GET(req: Request) {
   try {
     const db = getDb()
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
+    const includeInactive = searchParams.get('include_inactive') === '1'
 
-    let sql = `
-      SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active
-      FROM menu_item
-      WHERE is_active = 1
-      ORDER BY category, item_id
-    `
+    const conditions: string[] = []
     const params: string[] = []
 
+    if (!includeInactive) {
+      conditions.push('is_active = 1')
+    }
     if (category) {
-      sql = `
-        SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active
-        FROM menu_item
-        WHERE is_active = 1 AND category = ?
-        ORDER BY item_id
-      `
+      conditions.push('category = ?')
       params.push(category)
     }
+
+    const whereClause = conditions.length > 0
+      ? `WHERE ${conditions.join(' AND ')}`
+      : ''
+    const orderClause = category
+      ? 'ORDER BY item_id'
+      : 'ORDER BY category, item_id'
+
+    const sql = `
+      SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url
+      FROM menu_item
+      ${whereClause}
+      ${orderClause}
+    `
 
     const menu = db.prepare(sql).all(...params) as MenuItem[]
     return NextResponse.json<ApiResponse<MenuItem[]>>({ success: true, data: menu })
@@ -90,8 +103,8 @@ export async function POST(req: Request) {
 
     const db = getDb()
     const stmt = db.prepare(`
-      INSERT INTO menu_item (name, category, price, emoji, tag, sub, option, description, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO menu_item (name, category, price, emoji, tag, sub, option, description, is_active, image_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const result = stmt.run(
@@ -103,11 +116,12 @@ export async function POST(req: Request) {
       body.sub ?? '',
       body.option ?? '',
       body.description ?? '',
-      body.is_active ?? 1
+      body.is_active ?? 1,
+      body.image_url ?? ''
     )
 
     const newItem = db.prepare(
-      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active FROM menu_item WHERE item_id = ?'
+      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url FROM menu_item WHERE item_id = ?'
     ).get(result.lastInsertRowid) as MenuItem
 
     return NextResponse.json<ApiResponse<MenuItem>>(

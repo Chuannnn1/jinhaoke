@@ -1,19 +1,46 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
-// DB 裡的 status 是中文，這裡的 key 必須對應到 DB 值
-// 前端 UI 顯示「待製作/製作中/待付款/已完成/已取消」，傳給 API 時用英文
-// 五個狀態：待製作 / 製作中 / 待付款 / 已完成 / 已取消
+interface ImportValidItem {
+  item_name: string
+  qty: number
+  unit_price: number
+}
+
+interface ImportValidOrder {
+  order_id: string
+  items: ImportValidItem[]
+  total: number
+  phone: string
+  time: string
+  notes: string
+}
+
+interface ImportRowError {
+  row: number
+  reason: string
+}
+
+interface ImportPreviewResponse {
+  success: boolean
+  preview?: boolean
+  summary?: { orders: number; items: number; errors: number }
+  valid?: ImportValidOrder[]
+  errors?: ImportRowError[]
+  imported?: number
+  error?: string
+}
+
 const COLUMNS = [
-  { key: 'pending',          label: '待製作',  color: 'bg-amber-50 border-amber-200',   badge: 'bg-amber-400 text-white' },
-  { key: 'preparing',        label: '製作中',  color: 'bg-blue-50 border-blue-200',      badge: 'bg-blue-500 text-white' },
-  { key: 'awaiting_payment', label: '待付款',  color: 'bg-orange-50 border-orange-200', badge: 'bg-orange-500 text-white' },
-  { key: 'done',             label: '已完成',  color: 'bg-green-50 border-green-200',   badge: 'bg-green-500 text-white' },
-  { key: 'cancelled',        label: '已取消',  color: 'bg-red-50 border-red-200',        badge: 'bg-red-400 text-white' },
+  { key: '待製作',  label: '待製作',  color: 'bg-amber-50 border-amber-200',   badge: 'bg-amber-400 text-white' },
+  { key: '製作中',  label: '製作中',  color: 'bg-blue-50 border-blue-200',      badge: 'bg-blue-500 text-white' },
+  { key: '待付款',  label: '待付款',  color: 'bg-orange-50 border-orange-200', badge: 'bg-orange-500 text-white' },
+  { key: '已完成',  label: '已完成',  color: 'bg-green-50 border-green-200',   badge: 'bg-green-500 text-white' },
+  { key: '已取消',  label: '已取消',  color: 'bg-red-50 border-red-200',        badge: 'bg-red-400 text-white' },
 ]
 
-// DB 中文 status → 前端英文 key（用於分類顯示）
-const statusToKey: Record<string, string> = {
+// API 英文 key ↔ DB 中文 status 對應
+const keyToApi: Record<string, string> = {
   '待製作':  'pending',
   '製作中':  'preparing',
   '待付款':  'awaiting_payment',
@@ -22,9 +49,19 @@ const statusToKey: Record<string, string> = {
 }
 
 export default function AdminOrderPage() {
-  const [orders, setOrders] = useState([])
+  const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [dragOverCol, setDragOverCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null)
+
+  // 匯入 Modal 狀態
+  const [importOpen, setImportOpen] = useState(false)
+  const [importPhase, setImportPhase] = useState<'idle' | 'previewing' | 'done'>('idle')
+  const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importedCount, setImportedCount] = useState(0)
+  const importFileRef = useRef<HTMLInputElement | null>(null)
+  const importedFileRef = useRef<File | null>(null)
 
   // 初次載入從 API 撈訂單
   const fetchOrders = useCallback(async () => {
@@ -48,30 +85,31 @@ export default function AdminOrderPage() {
     return () => clearInterval(interval)
   }, [fetchOrders])
 
-  // 拖曳放下去 -> 更新訂單狀態
-  const handleDrop = useCallback(async (e, targetStatus) => {
+  // 拖曳放下去 -> 更新訂單狀態（targetStatus 是中文 key，如「待製作」）
+  const handleDrop = useCallback(async (e: React.DragEvent, targetStatus: string) => {
     e.preventDefault()
     setDragOverCol(null)
     const orderId = e.dataTransfer.getData('text/plain')
-    const order = orders.find(o => o.order_id === orderId)
+    const order = orders.find((o: any) => o.order_id === orderId)
     if (!order) return
 
-    // 樂觀更新 UI
-    setOrders(prev => prev.map(o =>
+    setOrders((prev: any[]) => prev.map(o =>
       o.order_id === orderId ? { ...o, status: targetStatus } : o
     ))
 
-    // 呼叫 API（傳英文 key，API 會轉成中文）
+    const apiKey = keyToApi[targetStatus]
+    if (!apiKey) return
+
     try {
       const res = await fetch('/api/orders/status', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId, status: targetStatus }),
+        body: JSON.stringify({ order_id: orderId, status: apiKey }),
       })
       const data = await res.json()
       if (!data.success) {
         alert(data.error || '更新失敗')
-        fetchOrders() // 失敗時重撈復原
+        fetchOrders()
       }
     } catch (err) {
       console.error('Failed to update order status:', err)
@@ -79,7 +117,7 @@ export default function AdminOrderPage() {
     }
   }, [orders, fetchOrders])
 
-  const handleDragOver = (e, colKey) => {
+  const handleDragOver = (e: React.DragEvent, colKey: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDragOverCol(colKey)
@@ -89,9 +127,86 @@ export default function AdminOrderPage() {
     setDragOverCol(null)
   }
 
-  const handleDragStart = (e, orderId) => {
+  const handleDragStart = (e: React.DragEvent, orderId: string) => {
     e.dataTransfer.setData('text/plain', orderId)
     e.dataTransfer.effectAllowed = 'move'
+  }
+
+  // ============================================================
+  // 匯入訂單流程
+  // ============================================================
+  const resetImport = () => {
+    setImportPhase('idle')
+    setImportPreview(null)
+    setImportError(null)
+    setImportLoading(false)
+    setImportedCount(0)
+    importedFileRef.current = null
+    if (importFileRef.current) importFileRef.current.value = ''
+  }
+
+  const openImport = () => {
+    resetImport()
+    setImportOpen(true)
+  }
+
+  const closeImport = () => {
+    setImportOpen(false)
+    resetImport()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    importedFileRef.current = file
+    setImportError(null)
+    setImportLoading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/orders/import', { method: 'POST', body: fd })
+      const data: ImportPreviewResponse = await res.json()
+      if (!data.success) {
+        setImportError(data.error || '預覽失敗')
+        setImportPhase('idle')
+      } else {
+        setImportPreview(data)
+        setImportPhase('previewing')
+      }
+    } catch {
+      setImportError('網路錯誤')
+      setImportPhase('idle')
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  const handleConfirmImport = async () => {
+    const file = importedFileRef.current
+    if (!file) return
+    setImportLoading(true)
+    setImportError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('confirm', '1')
+      const res = await fetch('/api/orders/import', { method: 'POST', body: fd })
+      const data: ImportPreviewResponse = await res.json()
+      if (!data.success) {
+        setImportError(data.error || '匯入失敗')
+      } else {
+        setImportedCount(data.imported ?? 0)
+        setImportPhase('done')
+        fetchOrders()
+        setTimeout(() => {
+          closeImport()
+        }, 2000)
+      }
+    } catch {
+      setImportError('網路錯誤')
+    } finally {
+      setImportLoading(false)
+    }
   }
 
   return (
@@ -100,9 +215,18 @@ export default function AdminOrderPage() {
         <h2 className="text-ink font-body font-semibold text-sm tracking-wide">
           當日訂單
         </h2>
-        <span className="text-[12px] text-ink/30 font-mono">
-          每 10 秒自動更新
-        </span>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={openImport}
+            className="text-[12px] px-3 py-1.5 rounded-md border border-border text-ink hover:bg-clay hover:text-white hover:border-clay transition-colors"
+          >
+            匯入訂單
+          </button>
+          <span className="text-[12px] text-ink/30 font-mono">
+            每 10 秒自動更新
+          </span>
+        </div>
       </header>
 
       <main className="flex-1 overflow-auto p-6 bg-gray-50">
@@ -113,8 +237,8 @@ export default function AdminOrderPage() {
           ) : (
             <div className="grid grid-cols-5 gap-4 h-full">
               {COLUMNS.map(col => {
-                const colOrders = orders.filter(o =>
-                  statusToKey[o.status] === col.key
+                const colOrders = orders.filter((o: any) =>
+                  o.status === col.key
                 )
                 return (
                   <div
@@ -130,7 +254,7 @@ export default function AdminOrderPage() {
                   >
                     {/* Column header */}
                     <div className="flex items-center justify-between px-4 py-3 shrink-0">
-                      <span className={`text-sm font-semibold font-body ${col.key === 'done' ? 'text-success' : 'text-ink'}`}>
+                      <span className={`text-sm font-semibold font-body ${col.key === '已完成' ? 'text-green-600' : 'text-ink'}`}>
                         {col.label}
                       </span>
                       <span className={`w-6 h-6 rounded-full ${col.badge} text-[11px] font-bold flex items-center justify-center`}>
@@ -178,6 +302,207 @@ export default function AdminOrderPage() {
             </div>
           )}
       </main>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-card-hover w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <h3 className="text-ink font-body font-semibold text-sm">匯入訂單</h3>
+              <button
+                type="button"
+                onClick={closeImport}
+                className="text-ink/40 hover:text-ink text-lg leading-none"
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+              {importPhase === 'idle' && (
+                <div className="space-y-4">
+                  <p className="text-[13px] text-ink/70 leading-relaxed">
+                    請上傳 CSV 檔案，欄位順序為：
+                    <code className="font-mono text-[12px] bg-gray-100 px-1.5 py-0.5 rounded mx-1">
+                      order_id,item_name,qty,note,phone,time
+                    </code>
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={importFileRef}
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileChange}
+                      disabled={importLoading}
+                      className="text-[12px] text-ink/70 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-border file:bg-white file:text-ink file:text-[12px] file:cursor-pointer file:hover:bg-clay file:hover:text-white file:hover:border-clay"
+                    />
+                    <a
+                      href="/templates/orders-template.csv"
+                      download
+                      className="text-[12px] text-clay hover:underline"
+                    >
+                      下載模板
+                    </a>
+                  </div>
+                  {importLoading && (
+                    <p className="text-[12px] text-ink/40">解析中…</p>
+                  )}
+                  {importError && (
+                    <p className="text-[12px] text-red-500">{importError}</p>
+                  )}
+                </div>
+              )}
+
+              {importPhase === 'previewing' && importPreview && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3 border border-border">
+                      <p className="text-[11px] text-ink/40">訂單數</p>
+                      <p className="font-mono text-lg text-ink font-semibold">
+                        {importPreview.summary?.orders ?? 0}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 border border-border">
+                      <p className="text-[11px] text-ink/40">項目數</p>
+                      <p className="font-mono text-lg text-ink font-semibold">
+                        {importPreview.summary?.items ?? 0}
+                      </p>
+                    </div>
+                    <div className={`rounded-lg p-3 border ${
+                      (importPreview.summary?.errors ?? 0) > 0
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-gray-50 border-border'
+                    }`}>
+                      <p className="text-[11px] text-ink/40">錯誤</p>
+                      <p className={`font-mono text-lg font-semibold ${
+                        (importPreview.summary?.errors ?? 0) > 0 ? 'text-red-500' : 'text-ink'
+                      }`}>
+                        {importPreview.summary?.errors ?? 0}
+                      </p>
+                    </div>
+                  </div>
+
+                  {importPreview.errors && importPreview.errors.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-ink/60 font-semibold mb-2">錯誤列表</p>
+                      <div className="border border-red-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-red-50 text-ink/70">
+                            <tr>
+                              <th className="px-3 py-2 text-left w-16">列號</th>
+                              <th className="px-3 py-2 text-left">原因</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.errors.map((e, i) => (
+                              <tr key={i} className="border-t border-red-100">
+                                <td className="px-3 py-2 font-mono">{e.row}</td>
+                                <td className="px-3 py-2 text-red-600">{e.reason}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {importPreview.valid && importPreview.valid.length > 0 && (
+                    <div>
+                      <p className="text-[12px] text-ink/60 font-semibold mb-2">可匯入訂單</p>
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-gray-50 text-ink/70">
+                            <tr>
+                              <th className="px-3 py-2 text-left">訂單編號</th>
+                              <th className="px-3 py-2 text-left">項目</th>
+                              <th className="px-3 py-2 text-right w-20">總額</th>
+                              <th className="px-3 py-2 text-left w-28">電話</th>
+                              <th className="px-3 py-2 text-left">備註</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.valid.map(o => (
+                              <tr key={o.order_id} className="border-t border-border">
+                                <td className="px-3 py-2 font-mono">{o.order_id}</td>
+                                <td className="px-3 py-2 text-ink/70">
+                                  {o.items.map(it => `${it.item_name}×${it.qty}`).join('、')}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-clay font-semibold">
+                                  NT$ {o.total}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-ink/60">
+                                  {o.phone || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-ink/40 italic">
+                                  {o.notes || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {importPreview.valid.some(o => o.notes) && (
+                        <p className="text-[11px] text-ink/40 mt-2">
+                          備註欄位目前僅供預覽，不會寫入資料庫。
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {importError && (
+                    <p className="text-[12px] text-red-500">{importError}</p>
+                  )}
+                </div>
+              )}
+
+              {importPhase === 'done' && (
+                <div className="py-10 text-center">
+                  <p className="text-ink font-semibold text-base">
+                    已匯入 {importedCount} 筆訂單
+                  </p>
+                  <p className="text-[12px] text-ink/40 mt-2">視窗即將關閉…</p>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-border flex items-center justify-end gap-2 shrink-0">
+              {importPhase === 'previewing' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={resetImport}
+                    disabled={importLoading}
+                    className="text-[12px] px-3 py-1.5 rounded-md border border-border text-ink hover:bg-gray-50"
+                  >
+                    重新選擇
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmImport}
+                    disabled={
+                      importLoading ||
+                      (importPreview?.errors?.length ?? 0) > 0 ||
+                      (importPreview?.valid?.length ?? 0) === 0
+                    }
+                    className="text-[12px] px-3 py-1.5 rounded-md bg-clay text-white hover:bg-clay-deep disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {importLoading ? '匯入中…' : '確認匯入'}
+                  </button>
+                </>
+              )}
+              {importPhase !== 'previewing' && (
+                <button
+                  type="button"
+                  onClick={closeImport}
+                  className="text-[12px] px-3 py-1.5 rounded-md border border-border text-ink hover:bg-gray-50"
+                >
+                  關閉
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

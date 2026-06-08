@@ -23,13 +23,14 @@ CREATE TABLE IF NOT EXISTS supplier (
 -- (2) 食材 ingredient — PK 用 name（含叫貨單位設計）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ingredient (
-    name               TEXT    PRIMARY KEY,       -- 食材名稱（PK）
-    stock_qty          REAL    NOT NULL DEFAULT 0,  -- 庫存數量（stock_unit 下的量）
-    safety_stock       REAL    NOT NULL DEFAULT 0,  -- 安全存量
-    stock_unit         TEXT    NOT NULL,            -- 庫存計量單位（片 / 隻 / kg）
-    order_unit         TEXT    NOT NULL,            -- 叫貨單位（箱 / 包 / 盒）
-    qty_per_order_unit REAL    NOT NULL,            -- 每個叫貨單位 = 多少 stock_unit
-    supplier_name      TEXT,                        -- FK → supplier.name
+    name                  TEXT    PRIMARY KEY,       -- 食材名稱（PK）
+    stock_qty             REAL    NOT NULL DEFAULT 0,  -- 庫存數量（stock_unit 下的量）
+    safety_stock          REAL    NOT NULL DEFAULT 0,  -- 安全存量（補貨警示點）
+    stock_unit            TEXT    NOT NULL,            -- 庫存計量單位（片 / 隻 / kg）
+    order_unit            TEXT    NOT NULL,            -- 叫貨單位（箱 / 包 / 盒）
+    qty_per_order_unit    REAL    NOT NULL,            -- 每個叫貨單位 = 多少 stock_unit
+    supplier_name         TEXT,                        -- FK → supplier.name
+    order_block_threshold REAL    DEFAULT NULL,        -- 接單暫停點；NULL 時 fallback 為 safety_stock * 0.2
     FOREIGN KEY (supplier_name) REFERENCES supplier(name)
         ON UPDATE CASCADE ON DELETE SET NULL
 );
@@ -54,7 +55,8 @@ CREATE TABLE IF NOT EXISTS menu_item (
     sub          TEXT    NOT NULL DEFAULT '',
     option       TEXT    NOT NULL DEFAULT '',
     description  TEXT,
-    is_active    INTEGER NOT NULL DEFAULT 1
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    image_url    TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_menu_category ON menu_item(category);
