@@ -101,7 +101,7 @@ export async function PATCH(request: Request) {
           const consumed = recipe.consume_qty * orderItem.quantity
           db.prepare(`
             UPDATE ingredient
-            SET stock = stock - ?
+            SET stock_qty = stock_qty - ?
             WHERE name = ?
           `).run(consumed, recipe.ingredient_name)
         }

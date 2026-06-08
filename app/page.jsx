@@ -234,9 +234,17 @@ export default function CustomerOrderPage() {
                       onClick={() => addToCart(item)}
                       className="bg-white border border-border rounded-lg text-left flex flex-col h-full overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform] duration-150"
                     >
-                      <div className="h-24 bg-gray-50 flex items-center justify-center text-3xl select-none">
-                        {item.emoji || '🍱'}
-                      </div>
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="h-24 w-full object-cover"
+                        />
+                      ) : (
+                        <div className="h-24 bg-gray-50 flex items-center justify-center text-xs text-gray-400 px-2 text-center">
+                          老闆還未上傳圖片~
+                        </div>
+                      )}
                       <div className="p-3 flex flex-col flex-1">
                         <p className="text-[13px] font-semibold text-ink leading-tight">
                           {item.name}
