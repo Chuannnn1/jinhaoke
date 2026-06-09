@@ -161,14 +161,26 @@ export async function POST(request: Request) {
       `).run(orderId, today, phone)
 
       // 3. 寫入訂單明細（用下單時的單價快照）
+      //    - 防呆：item_id 缺漏 / 查不到 menu_item → throw，整個 transaction rollback
+      //    - quantity 必須 > 0
+      const insertItem = db.prepare(`
+        INSERT INTO order_item (order_id, item_id, quantity, unit_price)
+        VALUES (?, ?, ?, ?)
+      `)
       for (const item of items) {
-        const menuItem = getMenuPrice.get(item.item_id) as { price: number } | undefined
-        if (menuItem) {
-          db.prepare(`
-            INSERT INTO order_item (order_id, item_id, quantity, unit_price)
-            VALUES (?, ?, ?, ?)
-          `).run(orderId, item.item_id, item.quantity, menuItem.price)
+        const itemId = item?.item_id
+        const quantity = Number(item?.quantity)
+        if (itemId === undefined || itemId === null) {
+          throw new Error('品項缺少 item_id')
         }
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error(`品項 ${itemId} 數量無效`)
+        }
+        const menuItem = getMenuPrice.get(itemId) as { price: number } | undefined
+        if (!menuItem) {
+          throw new Error(`找不到品項 ${itemId}`)
+        }
+        insertItem.run(orderId, itemId, quantity, menuItem.price)
       }
     })()
 
@@ -178,9 +190,15 @@ export async function POST(request: Request) {
     )
   } catch (error) {
     console.error('POST /api/orders error:', error)
+    const msg = error instanceof Error ? error.message : '未知錯誤'
+    // 品項驗證錯誤回 400（前台可顯示），其它系統錯誤回 500
+    const isClientError =
+      msg.startsWith('找不到品項') ||
+      msg.startsWith('品項缺少') ||
+      msg.includes('數量無效')
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : '未知錯誤' },
-      { status: 500 }
+      { success: false, error: msg },
+      { status: isClientError ? 400 : 500 }
     )
   }
 }

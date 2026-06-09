@@ -1,12 +1,11 @@
 // lib/db.ts
-// 更新日期：2026-05-22（對齊 schema v3）
+// 更新日期：2026-06-09（對齊 schema v3，整合 init-db idempotent seed）
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 
 const DB_PATH = path.join(process.cwd(), 'data', 'jinhaoke.db')
 const SCHEMA_PATH = path.join(process.cwd(), 'lib', 'schema.sql')
-const SEED_PATH = path.join(process.cwd(), 'lib', 'seed.sql')
 
 let db: Database.Database | null = null
 
@@ -22,11 +21,11 @@ export function getDb(): Database.Database {
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
 
-    // 執行 schema（會自動忽略已存在的 table）
+    // 執行 schema（IF NOT EXISTS，舊 DB 不會被破壞）
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8')
     db.exec(schema)
 
-    // 初始化 seed（只在 table 為空時執行）
+    // 初始化 seed（per-table idempotent）
     seedIfEmpty(db)
 
     console.log('[db] 資料庫初始化完成，DB 路徑：', DB_PATH)
@@ -34,40 +33,26 @@ export function getDb(): Database.Database {
   return db
 }
 
-function seedIfEmpty(db: Database.Database) {
-  const count = db.prepare('SELECT COUNT(*) as c FROM menu_item').get() as { c: number }
+function seedIfEmpty(database: Database.Database) {
+  // 若 menu_item 已有資料 → 視為已 seed 過，整批跳過
+  // （避免每次 boot 都跑 per-table 檢查的小開銷）
+  const count = database.prepare('SELECT COUNT(*) as c FROM menu_item').get() as { c: number }
   if (count.c > 0) return
 
-  console.log('[db] 初始化 seed 資料...')
+  console.log('[db] menu_item 為空，跑 seed...')
 
-  // 依賴順序：supplier → ingredient → menu_item → recipe
-  // delivery_customer 無依賴
-  // "order" → order_item → purchase_order → purchase_order_item
-  const tables = [
-    'supplier',
-    'ingredient',
-    'menu_item',
-    'delivery_customer',
-    'recipe',
-    '"order"',
-    'order_item',
-    'purchase_order',
-    'purchase_order_item',
-  ]
-
-  for (const table of tables) {
-    const rowCount = db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as { c: number }
-    if (rowCount.c > 0) continue
-
-    console.log(`[db] seed: ${table} 為空，寫入...`)
+  // 借用 scripts/seed-data.js 的 seedAll（JS 模組，per-table 檢查）
+  // Next.js server runtime 是 CJS，可直接用 eval 拿到原生 require
+  const seedDataPath = path.join(process.cwd(), 'scripts', 'seed-data.js')
+  if (!fs.existsSync(seedDataPath)) {
+    console.warn('[db] ⚠️  找不到 scripts/seed-data.js，跳過 seed')
+    return
   }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const seedMod = eval('require')(seedDataPath) as { seedAll: (db: Database.Database) => void }
+  seedMod.seedAll(database)
 
-  // 讀取並執行 seed.sql
-  const seed = fs.readFileSync(SEED_PATH, 'utf-8')
-  db.exec(seed)
-
-  // 驗證寫入
-  const menuCount = db.prepare('SELECT COUNT(*) as c FROM menu_item').get() as { c: number }
-  const ingCount = db.prepare('SELECT COUNT(*) as c FROM ingredient').get() as { c: number }
+  const menuCount = database.prepare('SELECT COUNT(*) as c FROM menu_item').get() as { c: number }
+  const ingCount = database.prepare('SELECT COUNT(*) as c FROM ingredient').get() as { c: number }
   console.log(`[db] seed 完成：${menuCount.c} 個餐點、${ingCount.c} 種食材`)
 }

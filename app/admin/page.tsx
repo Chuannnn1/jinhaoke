@@ -48,6 +48,11 @@ const keyToApi: Record<string, string> = {
   '已取消':  'cancelled',
 }
 
+// 終態：已完成 / 已取消 的訂單不能再被拖回前面狀態
+const TERMINAL_STATUSES = new Set(['已完成', '已取消', 'done', 'cancelled'])
+const isTerminalStatus = (status: unknown): boolean =>
+  typeof status === 'string' && TERMINAL_STATUSES.has(status)
+
 export default function AdminOrderPage() {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -90,8 +95,15 @@ export default function AdminOrderPage() {
     e.preventDefault()
     setDragOverCol(null)
     const orderId = e.dataTransfer.getData('text/plain')
+    if (!orderId) return
     const order = orders.find((o: any) => o.order_id === orderId)
     if (!order) return
+
+    // Defensive guard：已完成 / 已取消 的訂單為終態，拒絕任何拖曳變更
+    if (isTerminalStatus(order.status)) return
+
+    // 沒變動就不打 API
+    if (order.status === targetStatus) return
 
     setOrders((prev: any[]) => prev.map(o =>
       o.order_id === orderId ? { ...o, status: targetStatus } : o
@@ -127,7 +139,12 @@ export default function AdminOrderPage() {
     setDragOverCol(null)
   }
 
-  const handleDragStart = (e: React.DragEvent, orderId: string) => {
+  const handleDragStart = (e: React.DragEvent, orderId: string, status: string) => {
+    // 終態（已完成 / 已取消）禁止拖曳
+    if (isTerminalStatus(status)) {
+      e.preventDefault()
+      return
+    }
     e.dataTransfer.setData('text/plain', orderId)
     e.dataTransfer.effectAllowed = 'move'
   }
@@ -269,31 +286,39 @@ export default function AdminOrderPage() {
                           暫無訂單
                         </p>
                       ) : (
-                        colOrders.map(order => (
-                          <div
-                            key={order.order_id}
-                            draggable
-                            onDragStart={e => handleDragStart(e, order.order_id)}
-                            className="bg-white rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
-                          >
-                            <div className="flex items-start justify-between mb-2">
-                              <p className="font-mono text-[12px] font-semibold text-ink">
-                                #{order.order_id}
+                        colOrders.map(order => {
+                          const locked = isTerminalStatus(order.status)
+                          return (
+                            <div
+                              key={order.order_id}
+                              draggable={!locked}
+                              onDragStart={e => handleDragStart(e, order.order_id, order.status)}
+                              title={locked ? '此訂單已為終態，無法再變更狀態' : undefined}
+                              className={`bg-white rounded-lg p-3 shadow-sm transition-shadow ${
+                                locked
+                                  ? 'cursor-not-allowed opacity-60 border border-dashed border-ink/10'
+                                  : 'cursor-grab active:cursor-grabbing hover:shadow-md'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between mb-2">
+                                <p className="font-mono text-[12px] font-semibold text-ink">
+                                  #{order.order_id}
+                                </p>
+                                <p className="text-[11px] text-ink/30 font-mono">
+                                  {order.created_at ? order.created_at.slice(11, 16) : ''}
+                                </p>
+                              </div>
+                              <p className="text-[12px] text-ink/60 mb-1">
+                                {order.items?.length ?? 0} 項 · <span className="font-mono text-clay font-semibold">NT$ {order.total ?? 0}</span>
                               </p>
-                              <p className="text-[11px] text-ink/30 font-mono">
-                                {order.created_at ? order.created_at.slice(11, 16) : ''}
-                              </p>
+                              {order.note && (
+                                <p className="text-[11px] text-ink/30 italic truncate">
+                                  {order.note}
+                                </p>
+                              )}
                             </div>
-                            <p className="text-[12px] text-ink/60 mb-1">
-                              {order.items?.length ?? 0} 項 · <span className="font-mono text-clay font-semibold">NT$ {order.total ?? 0}</span>
-                            </p>
-                            {order.note && (
-                              <p className="text-[11px] text-ink/30 italic truncate">
-                                {order.note}
-                              </p>
-                            )}
-                          </div>
-                        ))
+                          )
+                        })
                       )}
                     </div>
                   </div>
