@@ -147,26 +147,44 @@ function LineChart({
         <circle key={i} cx={p.x} cy={p.y} r={3} fill={stroke} />
       ))}
       {/* x 軸標籤 */}
-      {points.map((p, i) =>
-        i % xLabelStride === 0 || i === points.length - 1 ? (
-          <text key={i} x={p.x} y={height - 8} fontSize="11" fill="#888" textAnchor="middle">
+      {points.map((p, i) => {
+        const isLast = i === points.length - 1
+        if (!(i % xLabelStride === 0 || isLast)) return null
+        const isFirst = i === 0
+        return (
+          <text
+            key={i}
+            x={p.x}
+            y={height - 8}
+            fontSize="11"
+            fill="#888"
+            textAnchor={isLast ? 'end' : isFirst ? 'start' : 'middle'}
+          >
             {p.d.bucket.length === 10 ? p.d.bucket.slice(5) : p.d.bucket}
           </text>
-        ) : null
-      )}
+        )
+      })}
       {/* hover */}
-      {hover && (
-        <g>
-          <line x1={hover.x} x2={hover.x} y1={padding.top} y2={padding.top + innerH}
-            stroke={stroke} strokeOpacity={0.3} strokeDasharray="3 4" />
-          <circle cx={hover.x} cy={hover.y} r={5} fill={stroke} />
-          <rect x={hover.x + 10} y={hover.y - 36} width={132} height={42} rx={6} fill="#1A1A1A" />
-          <text x={hover.x + 18} y={hover.y - 20} fontSize="10" fill="#bbb">{data[hover.i].bucket}</text>
-          <text x={hover.x + 18} y={hover.y - 6} fontSize="12" fill="white">
-            NT$ {fmtMoney(data[hover.i].revenue)} · {data[hover.i].orders_count} 筆
-          </text>
-        </g>
-      )}
+      {hover && (() => {
+        const tipW = 132
+        const tipPad = 10
+        // 若往右畫會超出 innerW，改畫在左側
+        const flipLeft = hover.x + tipPad + tipW > padding.left + innerW
+        const rectX = flipLeft ? hover.x - tipPad - tipW : hover.x + tipPad
+        const textX = flipLeft ? hover.x - tipPad - tipW + 8 : hover.x + 18
+        return (
+          <g>
+            <line x1={hover.x} x2={hover.x} y1={padding.top} y2={padding.top + innerH}
+              stroke={stroke} strokeOpacity={0.3} strokeDasharray="3 4" />
+            <circle cx={hover.x} cy={hover.y} r={5} fill={stroke} />
+            <rect x={rectX} y={hover.y - 36} width={tipW} height={42} rx={6} fill="#1A1A1A" />
+            <text x={textX} y={hover.y - 20} fontSize="10" fill="#bbb">{data[hover.i].bucket}</text>
+            <text x={textX} y={hover.y - 6} fontSize="12" fill="white">
+              NT$ {fmtMoney(data[hover.i].revenue)} · {data[hover.i].orders_count} 筆
+            </text>
+          </g>
+        )
+      })()}
     </svg>
   )
 }
@@ -197,6 +215,11 @@ function BarChart24({ data, fill }: { data: SeriesPoint[]; fill: string }) {
             <rect x={x} y={y} width={barW} height={Math.max(0, h)} rx={2} fill={fill} opacity={d.revenue > 0 ? 1 : 0.18} />
             {(i % 3 === 0) && (
               <text x={x + barW / 2} y={height - 8} fontSize="11" fill="#888" textAnchor="middle">{d.bucket}</text>
+            )}
+            {d.revenue > 0 && (
+              <text x={x + barW / 2} y={y - 4} fontSize="10" fill="#666" textAnchor="middle">
+                {fmtMoney(d.revenue)}
+              </text>
             )}
             {d.revenue > 0 && (
               <title>{d.bucket}:00 — NT$ {fmtMoney(d.revenue)} · {d.orders_count} 筆</title>

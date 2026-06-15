@@ -201,10 +201,6 @@ export default function AdminOrderPage() {
     })
   }
 
-  const handleMappingChange = (code: number, itemId: number) => {
-    setImportMapping(prev => ({ ...prev, [String(code)]: itemId }))
-  }
-
   const openImport = () => {
     resetImport()
     setImportOpen(true)
@@ -449,7 +445,6 @@ export default function AdminOrderPage() {
 
               {importPhase === 'previewing' && importPreview && (() => {
                 const unmappedCodes = computeUnmappedCodes()
-                const menuOptions = importPreview.menu_options ?? []
                 return (
                   <div className="space-y-4">
                     <div className="grid grid-cols-4 gap-3">
@@ -489,35 +484,9 @@ export default function AdminOrderPage() {
                     </div>
 
                     {unmappedCodes.length > 0 && (
-                      <div>
-                                              <p className="text-[12px] text-ink/60 font-semibold mb-2">
-                                                品項對應（剩餘 {unmappedCodes.length} 個 code 待選 — 未對應的品項將被跳過，不會匯入）
-                                              </p>
-                        <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3 space-y-2">
-                          {unmappedCodes.map(code => (
-                            <div key={code} className="flex items-center gap-3">
-                              <span className="font-mono text-[12px] w-16 shrink-0 text-ink">
-                                code {code}
-                              </span>
-                              <span className="text-[12px] text-ink/40">→</span>
-                              <select
-                                value={importMapping[String(code)] ?? ''}
-                                onChange={e => handleMappingChange(code, parseInt(e.target.value, 10))}
-                                className="flex-1 text-[12px] border border-border rounded px-2 py-1 bg-white"
-                              >
-                                <option value="">— 請選擇對應餐點 —</option>
-                                {menuOptions.map(m => (
-                                  <option key={m.item_id} value={m.item_id}>
-                                    [{m.item_id}] {m.name} (NT$ {m.price})
-                                    {m.is_active === 0 ? ' — 已下架' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-ink/40 mt-2">
-                          {`全部選完後可精準對應品項；未選的 code 匯入時將自動跳過。`}
+                      <div className="border border-amber-200 bg-amber-50/40 rounded-lg px-3 py-2">
+                        <p className="text-[12px] text-amber-700">
+                          已忽略 {unmappedCodes.length} 個未對應 code（{unmappedCodes.join(', ')}），這些品項不會匯入。
                         </p>
                       </div>
                     )}

@@ -7,7 +7,6 @@ const NAV = [
   { label: '庫存管理', href: '/admin/inventory' },
   { label: '菜單管理', href: '/admin/menu' },
   { label: '採購管理', href: '/admin/purchase' },
-  { label: '報表',     href: '/admin/reports' },
 ]
 
 export default function AdminLayout({ children }) {
