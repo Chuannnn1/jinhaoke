@@ -56,10 +56,8 @@ function seedIfEmpty(database: Database.Database) {
 
   // 既有 DB 補預設圖：image_url 為空時用 MENU_ITEMS 對應的預設值回填。
   // 自訂圖（已有非空 image_url）不會被覆蓋。
-  const hasImageUrl = database
-    .prepare("PRAGMA table_info(menu_item)")
-    .all()
-    .some((c: { name: string }) => c.name === 'image_url')
+  const cols = database.prepare("PRAGMA table_info(menu_item)").all() as Array<{ name: string }>
+  const hasImageUrl = cols.some(c => c.name === 'image_url')
   if (hasImageUrl) {
     const upd = database.prepare(
       "UPDATE menu_item SET image_url = ? WHERE name = ? AND (image_url IS NULL OR image_url = '')"
