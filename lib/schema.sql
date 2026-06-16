@@ -193,6 +193,19 @@ CREATE TABLE IF NOT EXISTS admin_session (
 CREATE INDEX IF NOT EXISTS idx_admin_session_expires ON admin_session(expires_at);
 
 -- ============================================================
+-- (10.5) 後台設定 admin_setting — 通用 key/value
+--   存目前唯一一筆 key: 'admin_password_hash'（first-boot 註冊用）
+--   未來要存其他設定也可重用這張表
+--   優先順序：process.env.ADMIN_PASSWORD_HASH > admin_setting
+--   （prod 部署用 env 寫死；dev/首次啟動用 wizard 寫進 DB）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS admin_setting (
+    key         TEXT    PRIMARY KEY,
+    value       TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
+);
+
+-- ============================================================
 -- (11) 食材—供應商 ingredient_supplier — M:N（一品多廠）
 --   每個食材可以從多家供應商叫貨。
 --   is_primary=1 標示老闆預設用的廠商；建議每個食材至少 1 筆 primary。
