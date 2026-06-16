@@ -14,7 +14,9 @@ const fs = require('fs')
 const readline = require('readline')
 const { randomBytes, scryptSync } = require('crypto')
 
-const ENV_PATH = path.join(__dirname, '..', '.env.local')
+// 寫到正確的 env 檔：prod 寫 .env.production.local（systemd 讀的那個），其餘寫 .env.local
+const ENV_FILE = process.env.NODE_ENV === 'production' ? '.env.production.local' : '.env.local'
+const ENV_PATH = path.join(__dirname, '..', ENV_FILE)
 
 function hashPassword(password) {
   const salt = randomBytes(16).toString('hex')

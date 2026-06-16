@@ -1,6 +1,6 @@
 // app/api/auth/login/route.ts
 import { NextResponse } from 'next/server'
-import { verifyPassword, createSession, buildSessionCookie } from '@/lib/auth'
+import { verifyPassword, createSession, buildSessionCookie, getStoredHash } from '@/lib/auth'
 
 interface LoginBody {
   password?: string
@@ -17,12 +17,13 @@ export async function POST(req: Request) {
       )
     }
 
-    const expectedHash = process.env.ADMIN_PASSWORD_HASH
+    // 優先讀 env，fallback 讀 admin_setting DB
+    const expectedHash = getStoredHash()
     if (!expectedHash) {
-      console.error('[auth/login] ADMIN_PASSWORD_HASH 未設定')
+      // 尚未設定 → 引導去 first-boot 註冊頁
       return NextResponse.json(
-        { success: false, error: '伺服器尚未設定管理員密碼，請聯絡部署者' },
-        { status: 500 }
+        { success: false, error: 'not_configured', message: '尚未設定密碼，請先在登入頁完成初始化' },
+        { status: 503 }
       )
     }
 

@@ -83,6 +83,35 @@ export function cleanExpiredSessions(): number {
   return r.changes
 }
 
+// ── 設定值：通用 key/value（目前只用 'admin_password_hash'）──
+export function getAdminSetting(key: string): string | null {
+  const row = getDb()
+    .prepare('SELECT value FROM admin_setting WHERE key = ?')
+    .get(key) as { value: string } | undefined
+  return row?.value ?? null
+}
+
+export function setAdminSetting(key: string, value: string): void {
+  getDb().prepare(`
+    INSERT INTO admin_setting (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, value, new Date().toISOString())
+}
+
+// ── 取得「目前生效」的密碼 hash ──
+// 優先讀 process.env.ADMIN_PASSWORD_HASH（prod 部署用 systemd EnvironmentFile 寫死的那個）；
+// 沒設的話從 admin_setting DB 讀（first-boot wizard 寫進去）。
+export function getStoredHash(): string | undefined {
+  const fromEnv = process.env.ADMIN_PASSWORD_HASH
+  if (fromEnv) return fromEnv
+  return getAdminSetting('admin_password_hash') ?? undefined
+}
+
+export function hasAdminPassword(): boolean {
+  return !!getStoredHash()
+}
+
 // ── Helper：從 Request 取 cookie 值 ──
 export function getSessionTokenFromRequest(req: Request): string | null {
   const cookieHeader = req.headers.get('cookie') ?? ''

@@ -12,6 +12,7 @@
 #   REPO_URL=…    自訂 git url（預設 https://github.com/Chuannnn1/jinhaoke.git）
 #   APP_PORT=…    Next.js 監聽 port（預設 3100，對齊 package.json）
 #   ADMIN_PW=…    非互動模式直接帶密碼（CI 用；互動模式會 prompt）
+#   SKIP_PW=1     完全跳過密碼設定，由瀏覽器 first-boot 頁面註冊
 #   TS_AUTHKEY=…  Tailscale auth key (tskey-…)；有設就自動連線，沒設則互動 URL
 #   TS_SKIP=1     完全跳過 tailscale up（之後手動跑）
 # ============================================================
@@ -95,7 +96,10 @@ if [ -f "$ENV_FILE" ]; then
   EXISTING_HASH=$(grep -E '^ADMIN_PASSWORD_HASH=' "$ENV_FILE" | head -1 | cut -d'=' -f2- || true)
 fi
 
-if [ -n "${ADMIN_PW:-}" ]; then
+if [ "${SKIP_PW:-0}" = "1" ]; then
+  log "SKIP_PW=1：跳過密碼設定，由瀏覽器 first-boot 頁面註冊"
+  ADMIN_PW_INPUT=""
+elif [ -n "${ADMIN_PW:-}" ]; then
   ADMIN_PW_INPUT="$ADMIN_PW"
 elif [ -n "$EXISTING_HASH" ]; then
   echo
@@ -111,6 +115,7 @@ elif [ -n "$EXISTING_HASH" ]; then
 else
   echo
   echo "設定後台登入密碼（至少 6 字；之後可重跑 set-admin-password.js 改）"
+  echo "  · 想改在瀏覽器 first-boot 頁面設定可按 Ctrl-C 取消，改用 SKIP_PW=1 重跑"
   read -srp "新密碼: " ADMIN_PW_INPUT; echo
   read -srp "再輸入一次: " ADMIN_PW_CONFIRM; echo
   [ "$ADMIN_PW_INPUT" = "$ADMIN_PW_CONFIRM" ] || err "兩次輸入不一致"
@@ -209,8 +214,12 @@ if [ -n "$TS_DNS" ]; then
   echo "    Tailscale DNS  : http://$TS_DNS:$APP_PORT/"
 fi
 echo
-echo "  · 第一次進 /admin 會跳登入頁，輸入剛才設定的密碼"
-echo "  · 改密碼：cd $APP_DIR && sudo -u $APP_USER node scripts/set-admin-password.js"
+if [ "${SKIP_PW:-0}" = "1" ] && [ -z "$EXISTING_HASH" ]; then
+  echo "  · 第一次進 /admin 會自動跳到「初始化設定」頁，請設定一組密碼"
+else
+  echo "  · 第一次進 /admin 會跳登入頁，輸入剛才設定的密碼"
+fi
+echo "  · 改密碼：cd $APP_DIR && sudo -u $APP_USER NODE_ENV=production node scripts/set-admin-password.js"
 echo "  · log    : sudo journalctl -u jinhaoke -f"
 echo "  · 重啟   : sudo systemctl restart jinhaoke"
 echo "============================================================"
