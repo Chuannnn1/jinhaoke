@@ -7,6 +7,7 @@
 //   2. 表單送出 → /api/auth/login 或 /api/auth/setup → 種 cookie → router.replace(from)
 import { useState, FormEvent, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import PasswordInput from '@/components/PasswordInput'
 
 export default function AdminLoginPage() {
   return (
@@ -140,37 +141,25 @@ function AdminLoginPageInner() {
         </p>
 
         <form onSubmit={isSetup ? handleSetup : handleLogin} className="space-y-4">
-          <div>
-            <label htmlFor="pw" className="text-xs text-ink-mute uppercase tracking-wider block mb-1">
-              {isSetup ? '新密碼（至少 6 字）' : '密碼'}
-            </label>
-            <input
-              id="pw"
-              type="password"
-              autoFocus
-              autoComplete={isSetup ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-              placeholder="••••••••"
-            />
-          </div>
+          <PasswordInput
+            id="pw"
+            label={isSetup ? '新密碼（至少 6 字）' : '密碼'}
+            autoFocus
+            autoComplete={isSetup ? 'new-password' : 'current-password'}
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+          />
 
           {isSetup && (
-            <div>
-              <label htmlFor="pw2" className="text-xs text-ink-mute uppercase tracking-wider block mb-1">
-                再輸入一次
-              </label>
-              <input
-                id="pw2"
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-                placeholder="••••••••"
-              />
-            </div>
+            <PasswordInput
+              id="pw2"
+              label="再輸入一次"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="••••••••"
+            />
           )}
 
           {error && (

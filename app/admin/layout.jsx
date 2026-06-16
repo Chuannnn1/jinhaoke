@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import PasswordInput from '@/components/PasswordInput'
 
 const NAV = [
   { label: '概覽',     href: '/admin/dashboard' },
@@ -152,17 +153,23 @@ function ChangePasswordModal({ onClose }) {
           </button>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Field
-              id="cur" label="當前密碼" value={current} onChange={setCurrent}
+            <PasswordInput
+              id="cur" label="當前密碼" value={current}
+              onChange={(e) => setCurrent(e.target.value)}
               autoComplete="current-password" autoFocus
+              placeholder="••••••••"
             />
-            <Field
-              id="new" label="新密碼（至少 6 字）" value={next} onChange={setNext}
+            <PasswordInput
+              id="new" label="新密碼（至少 6 字）" value={next}
+              onChange={(e) => setNext(e.target.value)}
               autoComplete="new-password"
+              placeholder="••••••••"
             />
-            <Field
-              id="new2" label="確認新密碼" value={confirm} onChange={setConfirm}
+            <PasswordInput
+              id="new2" label="確認新密碼" value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
+              placeholder="••••••••"
             />
 
             {error && (
@@ -195,22 +202,3 @@ function ChangePasswordModal({ onClose }) {
   )
 }
 
-function Field({ id, label, value, onChange, autoComplete, autoFocus }) {
-  return (
-    <div>
-      <label htmlFor={id} className="text-xs text-ink-mute uppercase tracking-wider block mb-1">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="password"
-        autoFocus={autoFocus}
-        autoComplete={autoComplete}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-        placeholder="••••••••"
-      />
-    </div>
-  )
-}
