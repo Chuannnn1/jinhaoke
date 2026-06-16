@@ -82,7 +82,7 @@ const MENU_ITEMS = [
   { name: '加牛',            category: '單點',     price: 60,  emoji: '🥩', tag: '牛',   sub: '',             option: '',                description: '燴飯加牛',                   image_url: '/uploads/menu/沙茶牛肉燴飯.webp' },
   { name: '加豬',            category: '單點',     price: 50,  emoji: '🐷', tag: '豬',   sub: '',             option: '',                description: '燴飯加豬',                   image_url: '/uploads/menu/沙茶豬肉燴飯.webp' },
   { name: '加雞',            category: '單點',     price: 60,  emoji: '🍗', tag: '雞',   sub: '',             option: '',                description: '燴飯加雞',                   image_url: '/uploads/menu/沙茶雞柳燴飯.webp' },
-  { name: '加飯',            category: '單點',     price: 20,  emoji: '🍚', tag: '其他', sub: '',             option: '',                description: '加一份白飯',                 image_url: '/uploads/menu/單點 - 白飯.webp' },
+  { name: '加飯',            category: '單點',     price: 10,  emoji: '🍚', tag: '其他', sub: '',             option: '',                description: '加一份白飯',                 image_url: '/uploads/menu/單點 - 白飯.webp' },
 ]
 
 // recipe: [menu_name, ingredient_name, consume_qty]
