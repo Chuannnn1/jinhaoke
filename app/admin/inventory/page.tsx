@@ -1,9 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-
-// useSearchParams 需要 Suspense 或關掉 SSG；庫存頁本就靠 API 取資料，停 SSG 才能 build
-export const dynamic = 'force-dynamic'
 
 // ============================================================
 // 庫存管理頁面（含「供應商」子分頁）
@@ -75,6 +72,14 @@ function formatQty(n: number | null | undefined): string {
 }
 
 export default function InventoryPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-ink-mute">載入中…</div>}>
+      <InventoryPageInner />
+    </Suspense>
+  )
+}
+
+function InventoryPageInner() {
   const searchParams = useSearchParams()
   const initialTab: TabKey = searchParams?.get('tab') === 'suppliers' ? 'suppliers' : 'inventory'
   const [tab, setTab] = useState<TabKey>(initialTab)
