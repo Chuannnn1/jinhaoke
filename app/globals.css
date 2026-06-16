@@ -47,6 +47,27 @@
     font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
       ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* 預設整站禁止拖曳選取（防顧客平板 / 員工誤觸時亂選文字反白） */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* 輸入框永遠允許選取（不影響打字 / paste / 框選輸入內容） */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  /* 白名單 opt-in：套用 .selectable 的元素 & 其子孫可以拖曳複製
+     用途：訂單詳情 modal、import 錯誤 log，這類需要 copy-paste 的區塊 */
+  .selectable,
+  .selectable * {
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
   }
 }
 

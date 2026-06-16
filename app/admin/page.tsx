@@ -90,8 +90,10 @@ export default function AdminOrderPage() {
   const [importedSkippedCodes, setImportedSkippedCodes] = useState<number[] | undefined>(undefined)
   // code -> item_id mapping（UI 下拉填入）
   const [importMapping, setImportMapping] = useState<Record<string, number>>({})
-  // 哪個 order 是展開狀態
+  // 哪個 order 是展開狀態（import preview 內用）
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set())
+  // 哪張 kanban 訂單卡被點開（modal 用；null = 沒開）
+  const [detailOrder, setDetailOrder] = useState<any | null>(null)
   const importFileRef = useRef<HTMLInputElement | null>(null)
   const importedFileRef = useRef<File | null>(null)
 
@@ -342,11 +344,12 @@ export default function AdminOrderPage() {
                               key={order.order_id}
                               draggable={!locked}
                               onDragStart={e => handleDragStart(e, order.order_id, order.status)}
-                              title={locked ? '此訂單已為終態，無法再變更狀態' : undefined}
-                              className={`bg-white rounded-lg p-3 shadow-sm transition-shadow ${
+                              onClick={() => setDetailOrder(order)}
+                              title={locked ? '此訂單已為終態，無法再變更狀態（點擊可看詳情）' : '拖曳變更狀態，點擊看詳情'}
+                              className={`bg-white rounded-lg p-3 shadow-sm transition-all hover:shadow-md hover:ring-1 hover:ring-clay/40 ${
                                 locked
-                                  ? 'cursor-not-allowed opacity-60 border border-dashed border-ink/10'
-                                  : 'cursor-grab active:cursor-grabbing hover:shadow-md'
+                                  ? 'opacity-60 border border-dashed border-ink/10 cursor-pointer'
+                                  : 'cursor-grab active:cursor-grabbing'
                               }`}
                             >
                               <div className="flex items-start justify-between mb-2">
@@ -478,7 +481,7 @@ export default function AdminOrderPage() {
                     </div>
 
                     {unmappedCodes.length > 0 && (
-                      <div className="border border-amber-200 bg-amber-50/40 rounded-lg px-3 py-2">
+                      <div className="selectable border border-amber-200 bg-amber-50/40 rounded-lg px-3 py-2">
                         <p className="text-[12px] text-amber-700">
                           已忽略 {unmappedCodes.length} 個未對應 code（{unmappedCodes.join(', ')}），這些品項不會匯入。
                         </p>
@@ -486,8 +489,8 @@ export default function AdminOrderPage() {
                     )}
 
                     {importPreview.errors && importPreview.errors.length > 0 && (
-                      <div>
-                        <p className="text-[12px] text-ink/60 font-semibold mb-2">錯誤列表</p>
+                      <div className="selectable">
+                        <p className="text-[12px] text-ink/60 font-semibold mb-2">錯誤列表（可拖曳複製）</p>
                         <div className="border border-red-200 rounded-lg overflow-hidden max-h-40 overflow-y-auto">
                           <table className="w-full text-[12px]">
                             <thead className="bg-red-50 text-ink/70 sticky top-0">
@@ -693,6 +696,116 @@ export default function AdminOrderPage() {
           </div>
         </div>
       )}
+
+      {/* 訂單詳情 modal — 點擊卡片開啟。整個面板套 .selectable 才能拖曳複製文字 */}
+      {detailOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-[2px] p-4"
+          onClick={() => setDetailOrder(null)}
+        >
+          <div
+            className="selectable bg-white rounded-2xl shadow-card-hover ring-1 ring-clay/15 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-clay-soft border-b border-clay/20 shrink-0">
+              <div className="flex items-center gap-3">
+                <p className="font-mono text-sm font-semibold text-ink">#{detailOrder.order_id}</p>
+                {(() => {
+                  const col = COLUMNS.find(c => c.key === detailOrder.status)
+                  return (
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${col?.badge ?? 'bg-gray-200 text-gray-700'}`}>
+                      {detailOrder.status}
+                    </span>
+                  )
+                })()}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailOrder(null)}
+                className="text-ink/50 hover:text-ink text-lg leading-none px-2"
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 bg-paper-warm">
+              {/* meta row */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px]">
+                <Meta label="建立時間" value={detailOrder.created_at?.replace('T', ' ').slice(0, 16) ?? '—'} />
+                <Meta label="顧客" value={detailOrder.customer_name ?? '內用顧客'} />
+                <Meta label="電話" value={detailOrder.customer_phone || '—'} />
+                <Meta label="付款狀態" value={detailOrder.paid ? '已付款' : '未付款'} />
+              </div>
+
+              {/* items table */}
+              <div>
+                <p className="text-[11px] text-ink-mute uppercase tracking-wider mb-2">品項明細</p>
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="text-[11px] text-ink-mute">
+                      <th className="text-left pb-1.5 font-normal">品名</th>
+                      <th className="text-right pb-1.5 w-20 font-normal">單價</th>
+                      <th className="text-right pb-1.5 w-12 font-normal">數量</th>
+                      <th className="text-right pb-1.5 w-20 font-normal">小計</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(detailOrder.items ?? []).map((it: any, i: number) => (
+                      <tr key={i} className="border-t border-gray-200">
+                        <td className="py-2 text-ink/85">
+                          {it.name ?? it.item_name ?? `?code${it.code}`}
+                          {it.spice && it.spice !== '無' && (
+                            <span className="ml-2 text-[11px] text-clay">辣度 {it.spice}</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right font-mono text-ink/60">
+                          {it.unit_price !== undefined ? `NT$ ${it.unit_price}` : '—'}
+                        </td>
+                        <td className="py-2 text-right font-mono">{it.quantity ?? it.qty ?? 1}</td>
+                        <td className="py-2 text-right font-mono text-ink">
+                          {it.subtotal !== undefined
+                            ? `NT$ ${it.subtotal}`
+                            : (it.unit_price !== undefined && it.qty !== undefined)
+                              ? `NT$ ${it.unit_price * it.qty}`
+                              : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* note */}
+              {detailOrder.note && (
+                <div>
+                  <p className="text-[11px] text-ink-mute uppercase tracking-wider mb-1">備註</p>
+                  <p className="text-[13px] text-ink/75 leading-relaxed bg-cream rounded-lg px-3 py-2 border border-border-soft">
+                    {detailOrder.note}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* footer total */}
+            <div className="px-6 py-4 bg-white border-t border-border flex items-center justify-between shrink-0">
+              <span className="text-[12px] text-ink-mute">總計</span>
+              <span className="font-mono text-clay font-bold text-lg">NT$ {detailOrder.total ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  )
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="text-ink-mute text-[11px] uppercase tracking-wider">{label}</span>
+      <span className="text-ink/85 font-mono text-[12px]">{value}</span>
+    </div>
   )
 }
