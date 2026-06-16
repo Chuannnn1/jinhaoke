@@ -2,13 +2,18 @@
 // 後台登入頁
 // - 沒 cookie 從 middleware 被導過來
 // - 輸入密碼 → POST /api/auth/login → 種 cookie → 跳回原本要去的路徑（?from=...）
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-// useSearchParams 需要 Suspense 或關掉 SSG；此頁本就是動態互動頁，直接停 SSG
-export const dynamic = 'force-dynamic'
-
 export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLoginPageInner />
+    </Suspense>
+  )
+}
+
+function AdminLoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const from = searchParams?.get('from') || '/admin'
