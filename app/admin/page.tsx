@@ -267,18 +267,12 @@ export default function AdminOrderPage() {
     }
   }
 
-  // 計算還有哪些 code 沒被 mapping
+  // 真正沒對應上的 code：以 API 端 unmapped_codes 為準（API 已做自動 1:1 + 套用 user mapping），
+  // 再額外扣掉使用者剛在 UI 補的 mapping（即將在下一輪 preview/confirm 生效）。
   const computeUnmappedCodes = (): number[] => {
     if (!importPreview) return []
-    const allCodes = new Set<number>()
-    for (const o of importPreview.valid ?? []) {
-      for (const it of o.items) allCodes.add(it.code)
-    }
-    const unmapped: number[] = []
-    for (const code of Array.from(allCodes).sort((a, b) => a - b)) {
-      if (!importMapping[String(code)]) unmapped.push(code)
-    }
-    return unmapped
+    const apiUnmapped = importPreview.unmapped_codes ?? []
+    return apiUnmapped.filter(code => !importMapping[String(code)])
   }
 
   return (
