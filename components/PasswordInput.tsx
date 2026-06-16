@@ -29,7 +29,7 @@ export default function PasswordInput({ label, id, className, ...inputProps }: P
           id={id}
           type={reveal ? 'text' : 'password'}
           className={
-            'w-full pl-3 pr-10 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay ' +
+            'w-full px-3 pr-10 py-2 border border-border rounded-lg text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-clay ' +
             (className ?? '')
           }
           {...inputProps}
@@ -44,7 +44,7 @@ export default function PasswordInput({ label, id, className, ...inputProps }: P
           onMouseLeave={hide}
           onTouchStart={show}
           onTouchEnd={hide}
-          className="absolute inset-y-0 right-0 px-3 flex items-center text-ink-mute hover:text-ink select-none"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink-mute hover:text-ink select-none leading-none"
         >
           {reveal ? EyeOffSvg : EyeSvg}
         </button>
