@@ -2,6 +2,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 
+// useSearchParams 需要 Suspense 或關掉 SSG；庫存頁本就靠 API 取資料，停 SSG 才能 build
+export const dynamic = 'force-dynamic'
+
 // ============================================================
 // 庫存管理頁面（含「供應商」子分頁）
 // /admin/inventory          → 庫存清單

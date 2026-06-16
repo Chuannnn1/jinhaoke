@@ -5,6 +5,9 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+// useSearchParams 需要 Suspense 或關掉 SSG；此頁本就是動態互動頁，直接停 SSG
+export const dynamic = 'force-dynamic'
+
 export default function AdminLoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()

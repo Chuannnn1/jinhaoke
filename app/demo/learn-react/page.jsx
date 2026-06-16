@@ -256,7 +256,7 @@ function ModalDemo() {
       )}
 
       <p className="text-xs text-gray-500 mt-2">
-        💡 原理：&#123;showModal && <Component />&#125; 等同「如果 true 就 render，否則不render」
+        💡 原理：&#123;showModal && &lt;Component /&gt;&#125; 等同「如果 true 就 render，否則不render」
       </p>
     </div>
   )
