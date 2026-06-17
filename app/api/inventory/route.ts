@@ -11,6 +11,7 @@ interface InventoryRow {
   qty_per_order_unit: number
   supplier_name: string | null
   order_block_threshold: number | null
+  category: string
 }
 
 interface ApiResponse<T = unknown> {
@@ -34,7 +35,8 @@ export async function GET() {
         i.order_unit,
         i.qty_per_order_unit,
         i.supplier_name,
-        i.order_block_threshold
+        i.order_block_threshold,
+        i.category
       FROM ingredient i
       ORDER BY i.name
     `).all() as InventoryRow[]

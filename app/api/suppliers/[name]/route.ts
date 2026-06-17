@@ -2,16 +2,17 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
-// ============================================================
-// 型別定義
-// ============================================================
 interface Supplier {
   name: string
   phone: string | null
+  owner_name: string | null
+  category: string
 }
 
 interface UpdateSupplierBody {
   phone?: string
+  owner_name?: string | null
+  category?: string
 }
 
 interface ApiResponse<T = unknown> {
@@ -20,8 +21,12 @@ interface ApiResponse<T = unknown> {
   data?: T
 }
 
+const CATEGORY_OPTIONS = new Set(['豬', '雞', '牛', '魚', '其他'])
+
+const SELECT_SQL = 'SELECT name, phone, owner_name, category FROM supplier WHERE name = ?'
+
 // ============================================================
-// GET /api/suppliers/:name — 查詢單一供應商
+// GET /api/suppliers/:name
 // ============================================================
 export async function GET(
   _req: Request,
@@ -29,8 +34,7 @@ export async function GET(
 ) {
   try {
     const db = getDb()
-    const supplier = db.prepare('SELECT name, phone FROM supplier WHERE name = ?')
-      .get(params.name) as Supplier | undefined
+    const supplier = db.prepare(SELECT_SQL).get(params.name) as Supplier | undefined
 
     if (!supplier) {
       return NextResponse.json<ApiResponse>(
@@ -40,7 +44,6 @@ export async function GET(
     }
 
     return NextResponse.json<ApiResponse<Supplier>>({ success: true, data: supplier })
-
   } catch (err) {
     console.error('[GET /api/suppliers/:name]', err)
     return NextResponse.json<ApiResponse>(
@@ -51,10 +54,7 @@ export async function GET(
 }
 
 // ============================================================
-// PUT /api/suppliers/:name — 修改供應商
-//
-// PUT 的定義：完整替換。req.body 帶上你想修改的欄位，
-// 伺服器只更新有出現的欄位（不帶的維持現值）。
+// PUT /api/suppliers/:name — 部分更新（phone / owner_name / category）
 // ============================================================
 export async function PUT(
   req: Request,
@@ -64,10 +64,7 @@ export async function PUT(
     const body: UpdateSupplierBody = await req.json()
     const db = getDb()
 
-    // ── 確認資源存在 ─────────────────────
-    const existing = db.prepare('SELECT name, phone FROM supplier WHERE name = ?')
-      .get(params.name) as Supplier | undefined
-
+    const existing = db.prepare(SELECT_SQL).get(params.name) as Supplier | undefined
     if (!existing) {
       return NextResponse.json<ApiResponse>(
         { success: false, error: '找不到該供應商' },
@@ -75,20 +72,37 @@ export async function PUT(
       )
     }
 
-    // ── 商業邏輯：不能修改 name（PK）──────
-    // 如果 req.body 有 name 且與 URL 不同 → 拒絕（PK 不能亂改）
+    const sets: string[] = []
+    const values: (string | null)[] = []
+
     if (body.phone !== undefined) {
-      const newPhone = body.phone.trim() === '' ? null : body.phone.trim()
-      db.prepare('UPDATE supplier SET phone = ? WHERE name = ?')
-        .run(newPhone, params.name)
+      sets.push('phone = ?')
+      values.push(body.phone.trim() === '' ? null : body.phone.trim())
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'owner_name')) {
+      const v = body.owner_name
+      sets.push('owner_name = ?')
+      values.push(v === null || v === undefined || v.trim() === '' ? null : v.trim())
+    }
+    if (body.category !== undefined) {
+      if (!CATEGORY_OPTIONS.has(body.category)) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: 'category 必須是 豬 / 雞 / 牛 / 魚 / 其他 之一' },
+          { status: 400 }
+        )
+      }
+      sets.push('category = ?')
+      values.push(body.category)
     }
 
-    // ── 回傳更新後的完整物件 ──────────────
-    const updated = db.prepare('SELECT name, phone FROM supplier WHERE name = ?')
-      .get(params.name) as Supplier
+    if (sets.length > 0) {
+      values.push(params.name)
+      db.prepare(`UPDATE supplier SET ${sets.join(', ')} WHERE name = ?`).run(...values)
+    }
+
+    const updated = db.prepare(SELECT_SQL).get(params.name) as Supplier
 
     return NextResponse.json<ApiResponse<Supplier>>({ success: true, data: updated })
-
   } catch (err) {
     console.error('[PUT /api/suppliers/:name]', err)
     return NextResponse.json<ApiResponse>(
@@ -99,7 +113,7 @@ export async function PUT(
 }
 
 // ============================================================
-// DELETE /api/suppliers/:name — 刪除供應商
+// DELETE /api/suppliers/:name
 // ============================================================
 export async function DELETE(
   _req: Request,
@@ -108,22 +122,13 @@ export async function DELETE(
   try {
     const db = getDb()
 
-    // ── 確認資源存在 ─────────────────────
-    const existing = db.prepare('SELECT name FROM supplier WHERE name = ?')
-      .get(params.name)
-
+    const existing = db.prepare('SELECT name FROM supplier WHERE name = ?').get(params.name)
     if (!existing) {
-      // ★ 重要：DELETE 是 idempotent 的
-      // 刪兩次和刪一次結果相同，所以找不到也回 200（不回 404）
-      // 這是 REST DELETE 的慣例
       return NextResponse.json<ApiResponse>({ success: true })
     }
 
-    // ── 寫入 ─────────────────────────────
     db.prepare('DELETE FROM supplier WHERE name = ?').run(params.name)
-
     return NextResponse.json<ApiResponse>({ success: true })
-
   } catch (err) {
     console.error('[DELETE /api/suppliers/:name]', err)
     return NextResponse.json<ApiResponse>(
@@ -131,9 +136,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-
-  // ★ 關於 FK 保護：
-  // schema 裡 ingredient → supplier 的 FK 是 ON DELETE SET NULL
-  // 所以刪除供應商不會失敗，只是該供應商的食材變成沒有 supplier
-  // 這是 schema 設計的選擇，不是程式的 bug
 }

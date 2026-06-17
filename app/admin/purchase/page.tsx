@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 // ============================================================
 // 採購管理 /admin/purchase
@@ -37,6 +38,8 @@ interface ReturnRecord {
 interface Supplier {
   name: string
   phone?: string | null
+  owner_name?: string | null
+  category: string
 }
 
 interface Ingredient {
@@ -45,7 +48,10 @@ interface Ingredient {
   order_unit: string
   qty_per_order_unit: number
   supplier_name: string | null
+  category: string
 }
+
+const PURCHASE_CATEGORIES = ['全部', '豬', '雞', '牛', '魚', '其他'] as const
 
 const STATUS_OPTIONS = ['已訂購', '已驗貨', '已退貨'] as const
 type StatusType = (typeof STATUS_OPTIONS)[number]
@@ -85,6 +91,15 @@ function formatQty(n: number): string {
 }
 
 export default function PurchasePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-ink-mute">載入中…</div>}>
+      <PurchasePageInner />
+    </Suspense>
+  )
+}
+
+function PurchasePageInner() {
+  const searchParams = useSearchParams()
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
@@ -93,6 +108,10 @@ export default function PurchasePage() {
   const [expandedPo, setExpandedPo] = useState<number | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [returnTarget, setReturnTarget] = useState<PurchaseOrder | null>(null)
+  // URL prefill：庫存頁面點「+ 採購單」會帶 category 進來
+  //   /admin/purchase?open=1&category=雞&ingredient=雞腿
+  const [prefillCategory, setPrefillCategory] = useState<string | null>(null)
+  const [prefillIngredient, setPrefillIngredient] = useState<string | null>(null)
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -121,6 +140,18 @@ export default function PurchasePage() {
       const data = await res.json()
       if (data.success) setIngredients(data.data)
     } catch { /* ignore */ }
+  }, [])
+
+  // 解析 URL prefill 一次（之後 user 操作 modal 自己持有 state）
+  useEffect(() => {
+    if (!searchParams) return
+    const cat = searchParams.get('category')
+    const ing = searchParams.get('ingredient')
+    const open = searchParams.get('open')
+    if (cat && ['豬', '雞', '牛', '魚', '其他'].includes(cat)) setPrefillCategory(cat)
+    if (ing) setPrefillIngredient(ing)
+    if (open === '1') setModalOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -359,9 +390,17 @@ export default function PurchasePage() {
         <CreatePOModal
           suppliers={suppliers}
           ingredients={ingredients}
-          onClose={() => setModalOpen(false)}
+          initialCategory={prefillCategory}
+          initialIngredient={prefillIngredient}
+          onClose={() => {
+            setModalOpen(false)
+            setPrefillCategory(null)
+            setPrefillIngredient(null)
+          }}
           onCreated={() => {
             setModalOpen(false)
+            setPrefillCategory(null)
+            setPrefillIngredient(null)
             fetchOrders()
           }}
         />
@@ -393,31 +432,59 @@ interface DraftItem {
 function CreatePOModal({
   suppliers,
   ingredients,
+  initialCategory,
+  initialIngredient,
   onClose,
   onCreated,
 }: {
   suppliers: Supplier[]
   ingredients: Ingredient[]
+  initialCategory?: string | null
+  initialIngredient?: string | null
   onClose: () => void
   onCreated: () => void
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const [poDate, setPoDate] = useState(today)
+  // category 第一段 select；'全部' 不過濾廠商
+  const [category, setCategory] = useState<string>(
+    initialCategory && ['豬', '雞', '牛', '魚', '其他'].includes(initialCategory)
+      ? initialCategory
+      : '全部'
+  )
   const [supplierName, setSupplierName] = useState('')
   const [status, setStatus] = useState<StatusType>('已訂購')
   const [items, setItems] = useState<DraftItem[]>([
-    { ingredient_name: '', order_qty: '', total_cost: '' },
+    { ingredient_name: initialIngredient ?? '', order_qty: '', total_cost: '' },
   ])
   const [submitting, setSubmitting] = useState(false)
   const [errMsg, setErrMsg] = useState<string | null>(null)
 
-  // 按供應商篩選食材（空 = 全部）；無供應商欄位的也顯示
+  // 第一段 select：分類 → filter supplier
+  const supplierOptions = useMemo(() => {
+    if (category === '全部') return suppliers
+    return suppliers.filter(s => s.category === category)
+  }, [suppliers, category])
+
+  // category 改變：清空 supplier 選擇（避免殘留不在 filter 內的廠商）
+  useEffect(() => {
+    if (supplierName && !supplierOptions.some(s => s.name === supplierName)) {
+      setSupplierName('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category])
+
+  // 食材選單同時依 category + supplier 過濾。
+  //   - category != '全部' 時，只列同分類食材（+ category=其他 的兼容用「全部分類」呈現？）
+  //   - supplier 選了之後，再過濾到該 supplier 的食材（保留無 supplier 食材作為 fallback）
   const ingredientOptions = useMemo(() => {
-    if (!supplierName) return ingredients
-    return ingredients.filter(
-      ing => ing.supplier_name === supplierName || !ing.supplier_name
-    )
-  }, [ingredients, supplierName])
+    let arr = ingredients
+    if (category !== '全部') arr = arr.filter(ing => ing.category === category)
+    if (supplierName) {
+      arr = arr.filter(ing => ing.supplier_name === supplierName || !ing.supplier_name)
+    }
+    return arr
+  }, [ingredients, category, supplierName])
 
   const addRow = () => {
     setItems(prev => [...prev, { ingredient_name: '', order_qty: '', total_cost: '' }])
@@ -497,7 +564,7 @@ function CreatePOModal({
         </div>
 
         <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <div>
               <label className="text-xs text-ink/50 mb-1 block">採購日期</label>
               <input
@@ -509,6 +576,21 @@ function CreatePOModal({
             </div>
             <div>
               <label className="text-xs text-ink/50 mb-1 block">
+                分類
+                <span className="text-ink/30 ml-1 text-[10px]">先選分類再選廠商</span>
+              </label>
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
+              >
+                {PURCHASE_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-ink/50 mb-1 block">
                 供應商 <span className="text-red-400">*</span>
               </label>
               <select
@@ -516,9 +598,13 @@ function CreatePOModal({
                 onChange={e => setSupplierName(e.target.value)}
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
               >
-                <option value="">請選擇</option>
-                {suppliers.map(s => (
-                  <option key={s.name} value={s.name}>{s.name}</option>
+                <option value="">
+                  {supplierOptions.length === 0 ? '此分類尚無廠商' : '請選擇'}
+                </option>
+                {supplierOptions.map(s => (
+                  <option key={s.name} value={s.name}>
+                    {s.name}{s.owner_name ? `（${s.owner_name}）` : ''}
+                  </option>
                 ))}
               </select>
             </div>

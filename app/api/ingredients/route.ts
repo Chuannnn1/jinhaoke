@@ -10,6 +10,7 @@ interface Ingredient {
   order_unit: string
   qty_per_order_unit: number
   supplier_name: string | null
+  category: string
 }
 
 interface CreateIngredientBody {
@@ -36,7 +37,7 @@ export async function GET() {
     const db = getDb()
     const ingredients = db.prepare(`
       SELECT name, stock_qty, safety_stock, stock_unit,
-             order_unit, qty_per_order_unit, supplier_name
+             order_unit, qty_per_order_unit, supplier_name, category
       FROM ingredient
       ORDER BY name
     `).all() as Ingredient[]
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
     // ── 回傳新建的完整物件 ────────────────
     const newIngredient = db.prepare(`
       SELECT name, stock_qty, safety_stock, stock_unit,
-             order_unit, qty_per_order_unit, supplier_name
+             order_unit, qty_per_order_unit, supplier_name, category
       FROM ingredient WHERE name = ?
     `).get(body.name.trim()) as Ingredient
 
