@@ -65,6 +65,6 @@ export async function POST(req: Request) {
     success: true,
     expires_at: expiresAt.toISOString(),
   })
-  res.headers.set('Set-Cookie', buildSessionCookie(token, expiresAt))
+  res.headers.set('Set-Cookie', buildSessionCookie(token, expiresAt, req))
   return res
 }

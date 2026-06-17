@@ -140,7 +140,18 @@ export function requireAdmin(req: Request): NextResponse | null {
 }
 
 // ── 設定 cookie helper（POST /api/auth/login 用）──
-export function buildSessionCookie(token: string, expiresAt: Date): string {
+//
+// 是否加 Secure：
+//   1. COOKIE_INSECURE=1            → 強制不加（local dev / 顯式覆寫）
+//   2. COOKIE_FORCE_SECURE=1        → 強制加（明知前面有 TLS proxy 終止 https）
+//   3. 否則看 request 的 scheme：    X-Forwarded-Proto / URL.protocol，是 https 才加
+//
+// 設計原因：
+//   先前只看 NODE_ENV=production 就一律加 Secure。
+//   但 Tailnet IP（http://100.x.x.x:3100）部署也是 production，
+//   結果 cookie 被瀏覽器拒絕 → login 後跳 /admin 又被踢回 /admin/login → 看起來像「卡在登入中」。
+//   改成 per-request 判斷後，HTTP 部署能正常運作，HTTPS 部署也仍會收到 Secure。
+export function buildSessionCookie(token: string, expiresAt: Date, req?: Request): string {
   const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
   const parts = [
     `${COOKIE_NAME}=${token}`,
@@ -149,11 +160,23 @@ export function buildSessionCookie(token: string, expiresAt: Date): string {
     'SameSite=Lax',
     `Max-Age=${maxAge}`,
   ]
-  // 若有 https（NODE_ENV=production 但本機開發用 http），就加 Secure
-  if (process.env.NODE_ENV === 'production' && process.env.COOKIE_INSECURE !== '1') {
-    parts.push('Secure')
-  }
+  if (shouldUseSecure(req)) parts.push('Secure')
   return parts.join('; ')
+}
+
+function shouldUseSecure(req?: Request): boolean {
+  if (process.env.COOKIE_INSECURE === '1') return false
+  if (process.env.COOKIE_FORCE_SECURE === '1') return true
+  if (!req) return false
+  // 先看 reverse proxy 帶過來的 X-Forwarded-Proto
+  const xfp = req.headers.get('x-forwarded-proto')
+  if (xfp) return xfp.split(',')[0].trim().toLowerCase() === 'https'
+  // 沒 proxy 就直接看 URL（直連時 req.url 是完整 URL）
+  try {
+    return new URL(req.url).protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export function buildClearCookie(): string {

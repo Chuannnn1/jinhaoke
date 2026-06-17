@@ -61,6 +61,12 @@
     -webkit-user-select: text;
   }
 
+  /* 隱藏 Edge / IE 內建密碼欄位的 reveal/clear 按鈕，避免和 PasswordInput 自製眼睛重複 */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+
   /* 白名單 opt-in：套用 .selectable 的元素 & 其子孫可以拖曳複製
      用途：訂單詳情 modal、import 錯誤 log，這類需要 copy-paste 的區塊 */
   .selectable,
