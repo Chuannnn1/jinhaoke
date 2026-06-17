@@ -15,6 +15,14 @@ const LEGACY_CATEGORY_MAP = {
 }
 const normalizeCategory = (c) => LEGACY_CATEGORY_MAP[c] ?? c
 
+// 前台不顯示：純 addon 用途，只在便當 / 燴飯客製化 modal 出現
+//   28 加牛 / 29 加豬 / 30 加雞
+const FRONT_HIDDEN_ITEM_IDS = new Set([28, 29, 30])
+
+// 單點分類自訂排序：26 沙茶燴雞肉視為 18.5，插在 18 沙茶燴豬肉後面，
+// 讓沙茶牛 / 豬 / 雞排在一起。其它品項仍維持 item_id 順序。
+const singleItemRank = (id) => (id === 26 ? 18.5 : id)
+
 // 當 API 無法取得時的 fallback（MOCK_MENU item_id 與 DB 不符，訂單會壞
 // 這只是避免 UI 完全炸掉，應該確保 API 正常）
 const FALLBACK_MENU = [
@@ -90,9 +98,10 @@ export default function CustomerOrderPage() {
   const isBlocked = (itemId) => availability[itemId]?.blocked === true
 
   // ---- 衍生資料 ----
+  const visibleMenu = menu.filter(item => !FRONT_HIDDEN_ITEM_IDS.has(item.item_id))
   const filteredMenu = activeTag === '全部'
-    ? menu
-    : menu.filter(item => item.tag === activeTag)
+    ? visibleMenu
+    : visibleMenu.filter(item => item.tag === activeTag)
 
   // ---- 函式 ----
   const addToCart = (item) => {
@@ -113,6 +122,7 @@ export default function CustomerOrderPage() {
         name: item.name,
         price: item.price,
         emoji: item.emoji,
+        image_url: item.image_url || '',                        // 帶下來給 cart row 縮圖用
         sub: item.sub || '',
         option: item.option || '',
         category: item.category,
@@ -265,6 +275,10 @@ export default function CustomerOrderPage() {
               i => i.category === cat || normalizeCategory(i.category) === cat
             )
             if (catItems.length === 0) return null
+            // 單點分類套用沙茶系列特別排序（26 沙茶燴雞肉移到 18 旁邊）
+            const sortedCatItems = cat === '單點'
+              ? [...catItems].sort((a, b) => singleItemRank(a.item_id) - singleItemRank(b.item_id))
+              : catItems
 
             return (
               <section key={cat} className="mb-8">
@@ -272,7 +286,7 @@ export default function CustomerOrderPage() {
                   {cat}
                 </h3>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
-                  {catItems.map(item => {
+                  {sortedCatItems.map(item => {
                     const blocked = isBlocked(item.item_id)
                     return (
                       <button
@@ -390,7 +404,17 @@ export default function CustomerOrderPage() {
               return (
                 <div key={item.item_id} className="bg-gray-50 rounded-lg p-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-xl shrink-0">{item.emoji || '🍱'}</span>
+                    {item.image_url ? (
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="w-10 h-10 rounded-md object-cover shrink-0 border border-border"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-md bg-white border border-border flex items-center justify-center text-base shrink-0">
+                        {item.emoji || '🍱'}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">
                         {item.name}
