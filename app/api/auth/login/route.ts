@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const { token, expiresAt } = createSession(userAgent)
 
     const res = NextResponse.json({ success: true, expires_at: expiresAt.toISOString() })
-    res.headers.set('Set-Cookie', buildSessionCookie(token, expiresAt))
+    res.headers.set('Set-Cookie', buildSessionCookie(token, expiresAt, req))
     return res
   } catch (err) {
     console.error('[POST /api/auth/login]', err)

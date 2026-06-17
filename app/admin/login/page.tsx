@@ -71,6 +71,17 @@ function AdminLoginPageInner() {
         setSubmitting(false)
         return
       }
+      // 後端有種 cookie，但若 browser 因 Secure / SameSite / cross-site policy 拒收
+      // → /admin 會被 middleware 立刻踢回 /admin/login。
+      // 跳轉前先用 /api/auth/me 確認 cookie 真的被瀏覽器收下，
+      // 確認後才 replace；否則直接報錯，避免 button 卡在「登入中…」。
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' })
+      const me = await meRes.json().catch(() => ({}))
+      if (!me?.authed) {
+        setError('登入成功但 cookie 沒被瀏覽器接受，請檢查瀏覽器設定或改用 HTTPS。')
+        setSubmitting(false)
+        return
+      }
       router.replace(from)
     } catch {
       setError('網路錯誤')
