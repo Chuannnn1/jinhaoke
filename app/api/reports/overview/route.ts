@@ -167,19 +167,45 @@ export async function GET(req: Request) {
     `).get(prevFrom, prevTo) as { revenue: number }
 
     // ── 採購成本 ─────────────────
-    // 採購單依 po_date 落在期間內計算；只算 status IN ('已訂購','已驗貨')，不含已退貨。
-    // 退貨會在 return_order 表反映：把 returned 的 qty 折算回成本扣回去（如果 schema 有單價）
-    // 目前簡化：直接吃 purchase_order.total_amount，已退貨整單就不算（最常見場景）
-    const costNow = db.prepare(`
+    // 所有狀態的採購單都計入毛成本，再扣除退貨品項的按比例成本。
+    // 退貨成本 = SUM((return_qty / order_qty) * item_total_cost)
+    const grossCostNow = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS cost
       FROM purchase_order
-      WHERE po_date BETWEEN ? AND ? AND status IN ('已訂購', '已驗貨')
+      WHERE po_date BETWEEN ? AND ?
     `).get(from, to) as { cost: number }
-    const costPrev = db.prepare(`
+    const returnedCostNow = db.prepare(`
+      SELECT COALESCE(SUM(
+        CASE WHEN poi.order_qty > 0
+          THEN (r.return_qty * 1.0 / poi.order_qty) * poi.total_cost
+          ELSE 0
+        END
+      ), 0) AS returned_cost
+      FROM return_order r
+      JOIN purchase_order_item poi ON r.po_id = poi.po_id AND r.ingredient_name = poi.ingredient_name
+      JOIN purchase_order po ON r.po_id = po.po_id
+      WHERE po.po_date BETWEEN ? AND ?
+    `).get(from, to) as { returned_cost: number }
+    const costNow = { cost: grossCostNow.cost - returnedCostNow.returned_cost }
+
+    const grossCostPrev = db.prepare(`
       SELECT COALESCE(SUM(total_amount), 0) AS cost
       FROM purchase_order
-      WHERE po_date BETWEEN ? AND ? AND status IN ('已訂購', '已驗貨')
+      WHERE po_date BETWEEN ? AND ?
     `).get(prevFrom, prevTo) as { cost: number }
+    const returnedCostPrev = db.prepare(`
+      SELECT COALESCE(SUM(
+        CASE WHEN poi.order_qty > 0
+          THEN (r.return_qty * 1.0 / poi.order_qty) * poi.total_cost
+          ELSE 0
+        END
+      ), 0) AS returned_cost
+      FROM return_order r
+      JOIN purchase_order_item poi ON r.po_id = poi.po_id AND r.ingredient_name = poi.ingredient_name
+      JOIN purchase_order po ON r.po_id = po.po_id
+      WHERE po.po_date BETWEEN ? AND ?
+    `).get(prevFrom, prevTo) as { returned_cost: number }
+    const costPrev = { cost: grossCostPrev.cost - returnedCostPrev.returned_cost }
 
     const revenue = Math.round(sum.revenue)
     const prev_revenue = Math.round(prevSum.revenue)

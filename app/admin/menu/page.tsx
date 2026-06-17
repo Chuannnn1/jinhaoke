@@ -453,24 +453,24 @@ export default function MenuPage() {
                                 {[item.sub, item.option].filter(Boolean).join(' · ') || '—'}
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <div className="flex justify-end gap-2">
+                                <div className="flex justify-end gap-2" style={{ opacity: 1 }}>
                                   <button
                                     onClick={() => openEdit(item)}
-                                    className="px-3 py-1 text-xs rounded-md border border-border text-clay hover:bg-gray-50 transition-colors"
+                                    className="px-3 py-1 text-xs rounded-md bg-clay-soft text-clay-deep border border-clay-deep/30 hover:bg-clay-deep hover:text-white transition-colors font-medium"
                                   >
                                     編輯
                                   </button>
                                   {inactive ? (
                                     <button
                                       onClick={() => handleReactivate(item)}
-                                      className="px-3 py-1 text-xs rounded-md border border-green-200 text-green-600 hover:bg-green-50 transition-colors"
+                                      className="px-3 py-1 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
                                     >
                                       重新上架
                                     </button>
                                   ) : (
                                     <button
                                       onClick={() => handleDelete(item)}
-                                      className="px-3 py-1 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                                      className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium"
                                     >
                                       下架
                                     </button>

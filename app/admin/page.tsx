@@ -291,7 +291,7 @@ export default function AdminOrderPage() {
         const fd = new FormData()
         fd.append('file', file)
         const res = await fetch('/api/orders/import', { method: 'POST', body: fd })
-        const data: ImportPreviewResponse = await res.json().catch(() => ({ success: false, error: 'JSON parse error' }))
+        const data: ImportPreviewResponse = await res.json().catch(() => ({ success: false, error: '回應解析失敗' }))
         setFilePreviews(prev => prev.map(fp => fp.filename === file.name
           ? data.success
             ? { ...fp, previewStatus: 'preview_ok', preview: data }
@@ -330,7 +330,7 @@ export default function AdminOrderPage() {
         fd.append('confirm', '1')
         fd.append('mapping', JSON.stringify(importMapping))
         const res = await fetch('/api/orders/import', { method: 'POST', body: fd })
-        const data: ImportPreviewResponse = await res.json().catch(() => ({ success: false, error: 'JSON parse error' }))
+        const data: ImportPreviewResponse = await res.json().catch(() => ({ success: false, error: '回應解析失敗' }))
         setFilePreviews(prev => prev.map(x => x.filename === fp.filename
           ? data.success
             ? { ...x, importStatus: 'imported', imported: data.imported ?? 0, importedSkippedCodes: data.skipped_unmapped_codes }
@@ -495,21 +495,23 @@ export default function AdminOrderPage() {
               {importPhase === 'idle' && (
                 <div className="space-y-4">
                   <p className="text-[13px] text-ink/70 leading-relaxed">
-                    請上傳當日訂單 CSV（可一次選多檔，每個檔案對應一個日期），檔名為
+                    請上傳當日訂單的
+                    <code className="font-mono text-[12px] bg-gray-100 px-1.5 py-0.5 rounded mx-1">.csv</code>
+                    檔案（可一次選多檔，每個檔案對應一個日期）。檔名格式為
                     <code className="font-mono text-[12px] bg-gray-100 px-1.5 py-0.5 rounded mx-1">
-                      MMDD.csv
+                      月日.csv
                     </code>
-                    （如 0519.csv 對應 2026-05-19）。欄位順序：
+                    ，例如 0519.csv 對應 2026-05-19。欄位順序：
                     <code className="font-mono text-[12px] bg-gray-100 px-1.5 py-0.5 rounded mx-1">
-                      編號,金額,電話,付款狀態,品項,辣度
+                      編號、金額、電話、付款狀態、品項、辣度
                     </code>
                   </p>
                   <ul className="text-[12px] text-ink/50 list-disc pl-5 space-y-0.5">
-                    <li>品項以分號分隔 code，可加 *N 表數量（例：5;7*3）</li>
-                    <li>code 直接對應菜單 item_id；已下架品項仍會自動辨識並標記</li>
-                    <li>付款狀態 0 = 待付款；1 = 已完成</li>
-                    <li>電話接受 3~15 碼或 null</li>
-                    <li>多檔匯入：選擇後並行 preview，按「全部匯入」依序送 server；個別失敗不影響其它檔案</li>
+                    <li>品項欄位以分號（;）分隔品項編號，數量用 *數量 表示（例：5;7*3 → 品項 5 一份、品項 7 三份）</li>
+                    <li>品項編號對應菜單中的品項；已下架品項仍會自動辨識並標記</li>
+                    <li>付款狀態：0 = 待付款，1 = 已完成</li>
+                    <li>電話欄位：3~15 碼數字，或留空</li>
+                    <li>多檔匯入：選擇後自動預覽所有檔案，按「全部匯入」後逐一寫入；個別失敗不影響其他檔案</li>
                   </ul>
                   <div className="flex items-center gap-3">
                     <input
@@ -754,9 +756,9 @@ export default function AdminOrderPage() {
                                           <table className="w-full text-[11px]">
                                             <thead className="text-ink/40">
                                               <tr>
-                                                <th className="text-left py-1 w-16">code</th>
+                                                <th className="text-left py-1 w-16">編號</th>
                                                 <th className="text-left py-1">品名</th>
-                                                <th className="text-right py-1 w-12">qty</th>
+                                                <th className="text-right py-1 w-12">數量</th>
                                                 <th className="text-right py-1 w-20">單價</th>
                                                 <th className="text-left py-1 w-20">辣度</th>
                                               </tr>
@@ -950,7 +952,7 @@ export default function AdminOrderPage() {
                 <Meta label="建立時間" value={detailOrder.created_at?.replace('T', ' ').slice(0, 16) ?? '—'} />
                 <Meta label="顧客" value={detailOrder.customer_name ?? '內用顧客'} />
                 <Meta label="電話" value={detailOrder.customer_phone || '—'} />
-                <Meta label="付款狀態" value={detailOrder.paid ? '已付款' : '未付款'} />
+                <Meta label="付款狀態" value={detailOrder.status === '已完成' ? '已付款' : detailOrder.status === '已取消' ? '已取消' : detailOrder.status === '待付款' ? '未付款' : '尚未結帳'} />
               </div>
 
               {/* items table */}

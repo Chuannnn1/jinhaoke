@@ -142,6 +142,7 @@ function InventoryTab() {
   const [search, setSearch] = useState('')
 
   const [editTarget, setEditTarget] = useState<InventoryItem | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
   const [autoGenLoading, setAutoGenLoading] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
 
@@ -246,7 +247,7 @@ function InventoryTab() {
 
   // 彈窗按「建立採購單」後：把使用者調整過的 items 送給 auto-generate
   const handleConfirmLowStock = async (
-    items: Array<{ ingredient_name: string; supplier_name: string; order_qty: number }>
+    items: Array<{ ingredient_name: string; supplier_name: string; order_qty: number; total_cost: number }>
   ) => {
     setAutoGenLoading(true)
     setToast(null)
@@ -352,19 +353,20 @@ function InventoryTab() {
             </button>
           ))}
         </div>
+        <div className="flex-1" />
         <button
           onClick={openLowStockModal}
           disabled={autoGenLoading || lowLoading}
-          className="ml-auto px-3 py-1.5 bg-clay text-white text-xs rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
+          className="px-3 py-1.5 bg-clay text-white text-xs rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
           title="查看低於安全庫存的食材，選擇廠商後一鍵建單"
         >
           {autoGenLoading ? '處理中…' : '低庫存補貨'}
         </button>
         <button
-          onClick={fetchInventory}
-          className="text-[12px] text-ink/40 hover:text-clay transition-colors font-mono"
+          onClick={() => setCreateOpen(true)}
+          className="px-4 py-1.5 bg-gray-500 text-white text-xs rounded-lg hover:bg-clay-deep transition-colors font-medium"
         >
-          重新整理
+          + 新增食材
         </button>
       </div>
 
@@ -492,6 +494,14 @@ function InventoryTab() {
           item={editTarget}
           onClose={() => setEditTarget(null)}
           onSaved={() => { setEditTarget(null); fetchInventory() }}
+        />
+      )}
+
+      {createOpen && (
+        <CreateIngredientModal
+          suppliers={suppliers}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); fetchInventory() }}
         />
       )}
 
@@ -989,6 +999,7 @@ interface LowDraftRow {
   ingredient_name: string
   supplier_name: string
   order_qty: string
+  estimated_cost: string
   stock_unit: string
 }
 
@@ -1001,23 +1012,55 @@ function LowStockAlertModal({
   items: LowStockItem[]
   submitting: boolean
   onClose: () => void
-  onConfirm: (rows: Array<{ ingredient_name: string; supplier_name: string; order_qty: number }>) => void
+  onConfirm: (rows: Array<{ ingredient_name: string; supplier_name: string; order_qty: number; total_cost: number }>) => void
 }) {
+  // 計算預估成本：price_per_order_unit * order_qty（order_qty 已經是叫貨單位數量）
+  // 如果 order_qty 是 stock_unit 計量，需要 / qty_per_order_unit 換算
+  const calcCost = (item: LowStockItem, supplierName: string, orderQty: number): number => {
+    const sup = item.suppliers.find(s => s.supplier_name === supplierName)
+    if (!sup?.price_per_order_unit || !item.qty_per_order_unit || item.qty_per_order_unit <= 0) return 0
+    // order_qty 是以 stock_unit 為單位，換算成叫貨單位再乘單價
+    return Math.round(sup.price_per_order_unit * orderQty / item.qty_per_order_unit)
+  }
+
   const [draft, setDraft] = useState<LowDraftRow[]>(() =>
-    items.map(it => ({
-      ingredient_name: it.name,
-      supplier_name:
+    items.map(it => {
+      const supplierName =
         it.suppliers.find(s => s.is_primary === 1)?.supplier_name ??
         it.suppliers[0]?.supplier_name ??
         it.default_supplier ??
-        '',
-      order_qty: String(it.suggested_qty || ''),
-      stock_unit: it.stock_unit,
-    }))
+        ''
+      const qty = it.suggested_qty || 0
+      const cost = calcCost(it, supplierName, qty)
+      return {
+        ingredient_name: it.name,
+        supplier_name: supplierName,
+        order_qty: String(it.suggested_qty || ''),
+        estimated_cost: cost > 0 ? String(cost) : '',
+        stock_unit: it.stock_unit,
+      }
+    })
   )
 
   const update = (idx: number, patch: Partial<LowDraftRow>) => {
-    setDraft(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+    setDraft(prev => prev.map((r, i) => {
+      if (i !== idx) return r
+      const updated = { ...r, ...patch }
+      // 如果是更改廠商或數量（非直接改成本），則自動重算成本
+      if ('supplier_name' in patch || 'order_qty' in patch) {
+        const item = items[idx]
+        const qty = Number(updated.order_qty)
+        if (item && Number.isFinite(qty) && qty > 0) {
+          const cost = calcCost(item, updated.supplier_name, qty)
+          updated.estimated_cost = cost > 0 ? String(cost) : updated.estimated_cost
+        }
+      }
+      return updated
+    }))
+  }
+
+  const updateCost = (idx: number, costStr: string) => {
+    setDraft(prev => prev.map((r, i) => (i === idx ? { ...r, estimated_cost: costStr } : r)))
   }
 
   const validRows = useMemo(
@@ -1027,6 +1070,7 @@ function LowStockAlertModal({
           ingredient_name: r.ingredient_name,
           supplier_name: r.supplier_name,
           order_qty: Number(r.order_qty),
+          total_cost: Number(r.estimated_cost) || 0,
         }))
         .filter(r => r.supplier_name && Number.isFinite(r.order_qty) && r.order_qty > 0),
     [draft]
@@ -1041,7 +1085,7 @@ function LowStockAlertModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[88vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[88vh] flex flex-col overflow-hidden">
         <div className="px-6 py-5 border-b border-gray-200 flex items-start justify-between">
           <div>
             <h3 className="font-semibold text-ink text-lg flex items-center gap-2">
@@ -1064,6 +1108,7 @@ function LowStockAlertModal({
                 <th className="text-right pb-2">庫存 / 安全</th>
                 <th className="text-left pb-2 pl-3">廠商</th>
                 <th className="text-right pb-2">叫貨數量</th>
+                <th className="text-right pb-2">預估成本</th>
               </tr>
             </thead>
             <tbody>
@@ -1123,6 +1168,20 @@ function LowStockAlertModal({
                         <span className="text-xs text-ink/40">{it.stock_unit}</span>
                       </div>
                     </td>
+                    <td className="py-3 text-right">
+                      <div className="inline-flex items-center gap-1">
+                        <span className="text-xs text-ink/40">NT$</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={row.estimated_cost}
+                          onChange={e => updateCost(idx, e.target.value)}
+                          placeholder="0"
+                          className="w-20 px-2 py-1 border border-border rounded text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-clay"
+                        />
+                      </div>
+                    </td>
                   </tr>
                 )
               })}
@@ -1138,6 +1197,9 @@ function LowStockAlertModal({
           <span className="text-xs text-ink/50">
             將建立 <span className="font-semibold text-ink">{groupedCount}</span> 張採購單，共
             <span className="font-semibold text-ink"> {validRows.length}</span> 項食材
+            {validRows.some(r => r.total_cost > 0) && (
+              <>，預估總成本 <span className="font-semibold text-ink">NT${validRows.reduce((sum, r) => sum + r.total_cost, 0).toLocaleString()}</span></>
+            )}
           </span>
           <div className="flex gap-3">
             <button
@@ -1156,6 +1218,257 @@ function LowStockAlertModal({
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// 新增食材 Modal
+// ============================================================
+const STOCK_UNIT_PRESETS = ['片', '隻', 'kg', '包', '顆', '條', '瓶', '罐', '把', '盒', '份', '個']
+const ORDER_UNIT_PRESETS = ['箱', '包', '盒', '袋', '瓶', '罐', '桶', '組', '份', '個']
+const INGREDIENT_CATEGORIES = ['豬', '雞', '牛', '魚', '其他'] as const
+
+interface CreateIngredientForm {
+  name: string
+  category: string
+  stock_unit: string
+  order_unit: string
+  qty_per_order_unit: string
+  stock_qty: string
+  safety_stock: string
+  order_block_threshold: string
+  supplier_name: string
+}
+
+const EMPTY_CREATE_FORM: CreateIngredientForm = {
+  name: '',
+  category: '其他',
+  stock_unit: '',
+  order_unit: '',
+  qty_per_order_unit: '',
+  stock_qty: '0',
+  safety_stock: '0',
+  order_block_threshold: '',
+  supplier_name: '',
+}
+
+function CreateIngredientModal({
+  suppliers,
+  onClose,
+  onCreated,
+}: {
+  suppliers: Supplier[]
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [form, setForm] = useState<CreateIngredientForm>(EMPTY_CREATE_FORM)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const upd = (key: keyof CreateIngredientForm, val: string) =>
+    setForm(prev => ({ ...prev, [key]: val }))
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) { setError('請輸入食材名稱'); return }
+    if (!form.stock_unit.trim()) { setError('請輸入庫存單位'); return }
+    if (!form.order_unit.trim()) { setError('請輸入叫貨單位'); return }
+    const qtyPerOrder = Number(form.qty_per_order_unit)
+    if (!qtyPerOrder || qtyPerOrder <= 0) { setError('每叫貨單位數量需大於 0'); return }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/ingredients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          category: form.category,
+          stock_unit: form.stock_unit.trim(),
+          order_unit: form.order_unit.trim(),
+          qty_per_order_unit: qtyPerOrder,
+          stock_qty: Number(form.stock_qty) || 0,
+          safety_stock: Number(form.safety_stock) || 0,
+          order_block_threshold: form.order_block_threshold ? Number(form.order_block_threshold) : null,
+          supplier_name: form.supplier_name || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        onCreated()
+      } else {
+        setError(data.error || '新增失敗')
+      }
+    } catch {
+      setError('網路錯誤')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="font-semibold text-ink text-base">新增食材</h3>
+          <button onClick={onClose} className="text-ink/40 hover:text-ink text-2xl leading-none">×</button>
+        </div>
+
+        <form onSubmit={e => { e.preventDefault(); if (!submitting) handleSubmit() }}>
+          <div className="px-6 py-5 space-y-4 max-h-[65vh] overflow-y-auto">
+            {/* 品名 */}
+            <div>
+              <label className="text-xs text-ink/50 mb-1 block">品名 <span className="text-red-400">*</span></label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={e => upd('name', e.target.value)}
+                placeholder="例：酥炸排骨"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
+              />
+            </div>
+
+            {/* 分類 + 供應商 */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">分類</label>
+                <select
+                  value={form.category}
+                  onChange={e => upd('category', e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
+                >
+                  {INGREDIENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">供應商</label>
+                <select
+                  value={form.supplier_name}
+                  onChange={e => upd('supplier_name', e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
+                >
+                  <option value="">— 無 —</option>
+                  {suppliers.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* 庫存單位 + 叫貨單位（datalist） */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">庫存單位 <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  list="stock-unit-list"
+                  value={form.stock_unit}
+                  onChange={e => upd('stock_unit', e.target.value)}
+                  placeholder="片、kg、隻…"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
+                />
+                <datalist id="stock-unit-list">
+                  {STOCK_UNIT_PRESETS.map(u => <option key={u} value={u} />)}
+                </datalist>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">叫貨單位 <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  list="order-unit-list"
+                  value={form.order_unit}
+                  onChange={e => upd('order_unit', e.target.value)}
+                  placeholder="箱、包、盒…"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
+                />
+                <datalist id="order-unit-list">
+                  {ORDER_UNIT_PRESETS.map(u => <option key={u} value={u} />)}
+                </datalist>
+              </div>
+            </div>
+
+            {/* 每叫貨單位數量 */}
+            <div>
+              <label className="text-xs text-ink/50 mb-1 block">
+                每叫貨單位數量 <span className="text-red-400">*</span>
+                <span className="text-ink/30 ml-1">（1 {form.order_unit || '叫貨單位'} = 幾 {form.stock_unit || '庫存單位'}）</span>
+              </label>
+              <input
+                type="number"
+                value={form.qty_per_order_unit}
+                onChange={e => upd('qty_per_order_unit', e.target.value)}
+                min={0.1}
+                step="any"
+                placeholder="例：10"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
+              />
+            </div>
+
+            {/* 初始庫存 + 安全存量 */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">初始庫存</label>
+                <input
+                  type="number"
+                  value={form.stock_qty}
+                  onChange={e => upd('stock_qty', e.target.value)}
+                  min={0}
+                  step="any"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-ink/50 mb-1 block">安全存量</label>
+                <input
+                  type="number"
+                  value={form.safety_stock}
+                  onChange={e => upd('safety_stock', e.target.value)}
+                  min={0}
+                  step="any"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
+                />
+              </div>
+            </div>
+
+            {/* 暫停接單點（選填） */}
+            <div>
+              <label className="text-xs text-ink/50 mb-1 block">
+                暫停接單點
+                <span className="text-ink/30 ml-1">（選填，低於此值時前台停售）</span>
+              </label>
+              <input
+                type="number"
+                value={form.order_block_threshold}
+                onChange={e => upd('order_block_threshold', e.target.value)}
+                min={0}
+                step="any"
+                placeholder="留空使用預設值（安全存量 × 20%）"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-ink/50 hover:text-ink transition-colors"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 bg-gray-500 text-white text-sm rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
+            >
+              {submitting ? '新增中…' : '新增食材'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
