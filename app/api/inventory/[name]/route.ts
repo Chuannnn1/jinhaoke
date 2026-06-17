@@ -11,6 +11,7 @@ interface InventoryRow {
   qty_per_order_unit: number
   supplier_name: string | null
   order_block_threshold: number | null
+  category: string
 }
 
 interface UpdateInventoryBody {
@@ -23,7 +24,10 @@ interface PatchInventoryBody {
   safety_stock?: number
   order_block_threshold?: number | null
   stock_qty?: number
+  category?: string
 }
+
+const CATEGORY_OPTIONS = new Set(['豬', '雞', '牛', '魚', '其他'])
 
 interface ApiResponse<T = unknown> {
   success: boolean
@@ -34,7 +38,8 @@ interface ApiResponse<T = unknown> {
 const SELECT_INVENTORY_SQL = [
   'SELECT',
   '  i.name, i.stock_qty, i.safety_stock, i.stock_unit,',
-  '  i.order_unit, i.qty_per_order_unit, i.supplier_name, i.order_block_threshold',
+  '  i.order_unit, i.qty_per_order_unit, i.supplier_name, i.order_block_threshold,',
+  '  i.category',
   'FROM ingredient i WHERE i.name = ?',
 ].join(' ')
 
@@ -180,6 +185,17 @@ export async function PATCH(
       }
       sets.push('stock_qty = ?')
       values.push(body.stock_qty)
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'category')) {
+      if (!body.category || !CATEGORY_OPTIONS.has(body.category)) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: 'category 必須是 豬 / 雞 / 牛 / 魚 / 其他 之一' },
+          { status: 400 }
+        )
+      }
+      sets.push('category = ?')
+      values.push(body.category)
     }
 
     if (sets.length === 0) {

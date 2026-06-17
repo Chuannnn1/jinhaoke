@@ -15,8 +15,10 @@ PRAGMA foreign_keys = ON;
 -- (1) 供應商 supplier — PK 用 name
 -- ============================================================
 CREATE TABLE IF NOT EXISTS supplier (
-    name        TEXT    PRIMARY KEY,           -- 供應商名稱
-    phone       TEXT
+    name        TEXT    PRIMARY KEY,                  -- 供應商名稱
+    phone       TEXT,
+    owner_name  TEXT,                                 -- 老闆姓名（NULLable）
+    category    TEXT    NOT NULL DEFAULT '其他'       -- 主分類（豬/雞/牛/魚/其他）
 );
 
 -- ============================================================
@@ -31,6 +33,7 @@ CREATE TABLE IF NOT EXISTS ingredient (
     qty_per_order_unit    REAL    NOT NULL,            -- 每個叫貨單位 = 多少 stock_unit
     supplier_name         TEXT,                        -- FK → supplier.name
     order_block_threshold REAL    DEFAULT NULL,        -- 接單暫停點；NULL 時 fallback 為 safety_stock * 0.2
+    category              TEXT    NOT NULL DEFAULT '其他',  -- 分類（豬/雞/牛/魚/其他），用來給「庫存→建採購單」帶 default
     FOREIGN KEY (supplier_name) REFERENCES supplier(name)
         ON UPDATE CASCADE ON DELETE SET NULL
 );
