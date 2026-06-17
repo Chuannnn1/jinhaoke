@@ -36,13 +36,21 @@ export default function AdminLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="w-[200px] bg-white border-r border-border flex flex-col shrink-0">
-        <div className="px-5 py-5 border-b border-border">
-          <h1 className="text-ink font-body text-lg font-bold">
-            金濠客食堂
-          </h1>
-          <p className="text-ink-mute text-[11px] mt-0.5 font-body">
-            後台管理
-          </p>
+        <div className="px-5 py-5 border-b border-border flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/jinhaoke-logo.webp"
+            alt="金濠客食堂"
+            className="w-12 h-12 rounded-full shrink-0 object-cover"
+          />
+          <div className="min-w-0">
+            <h1 className="text-ink font-body text-sm font-bold leading-tight truncate">
+              金濠客食堂
+            </h1>
+            <p className="text-ink-mute text-[11px] mt-0.5 font-body">
+              後台管理
+            </p>
+          </div>
         </div>
         <nav className="flex-1 px-3 py-3 space-y-0.5">
           {NAV.map(item => (

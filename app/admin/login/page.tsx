@@ -142,10 +142,18 @@ function AdminLoginPageInner() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-cream px-4">
       <div className="w-full max-w-sm bg-paper rounded-2xl shadow-md border border-border/40 p-8">
-        <h1 className="text-xl font-bold text-ink mb-1">
+        <div className="flex flex-col items-center mb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/jinhaoke-logo.webp"
+            alt="金濠客食堂"
+            className="w-24 h-24 rounded-full object-cover shadow-sm"
+          />
+        </div>
+        <h1 className="text-xl font-bold text-ink mb-1 text-center">
           金濠客 — {isSetup ? '初始化設定' : '後台登入'}
         </h1>
-        <p className="text-xs text-ink-mute mb-6">
+        <p className="text-xs text-ink-mute mb-6 text-center">
           {isSetup
             ? '這台機器是第一次啟動，請設定後台管理密碼。設完即自動登入，有效期 60 天。'
             : '輸入管理密碼以進入後台。登入有效期 60 天。'}
