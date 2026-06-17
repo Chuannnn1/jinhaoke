@@ -96,14 +96,27 @@ export default function AdminOrderPage() {
   const [detailOrder, setDetailOrder] = useState<any | null>(null)
   const importFileRef = useRef<HTMLInputElement | null>(null)
   const importedFileRef = useRef<File | null>(null)
+  // 拖卡 in-flight 樂觀狀態：order_id → 目標 status。
+  // fetchOrders 看見有 in-flight 就用樂觀值覆蓋 server 值，避免 race。
+  const pendingDragRef = useRef<Map<string, string>>(new Map())
 
   // 初次載入從 API 撈訂單
+  //
+  // 若 server 訂單仍是舊狀態、但前端有 in-flight 樂觀更新（PATCH 還沒回），
+  // 用樂觀狀態蓋上去，避免拖卡尚未送達就被 auto-refresh 蓋掉。
   const fetchOrders = useCallback(async () => {
     try {
       const res = await fetch('/api/orders')
       const data = await res.json()
       if (data.success) {
-        setOrders(data.data)
+        const pending = pendingDragRef.current
+        const merged = pending.size === 0
+          ? data.data
+          : data.data.map((o: any) => {
+              const optimistic = pending.get(o.order_id)
+              return optimistic ? { ...o, status: optimistic } : o
+            })
+        setOrders(merged)
       }
     } catch (err) {
       console.error('Failed to fetch orders:', err)
@@ -120,6 +133,9 @@ export default function AdminOrderPage() {
   }, [fetchOrders])
 
   // 拖曳放下去 -> 更新訂單狀態（targetStatus 是中文 key，如「待製作」）
+  //
+  // 同時做樂觀更新 + 標記 in-flight，避免 10 秒 auto-refresh 在 PATCH
+  // 尚未完成時把樂觀狀態蓋掉（這是之前「挪卡後狀態沒生效」的根因）。
   const handleDrop = useCallback(async (e: React.DragEvent, targetStatus: string) => {
     e.preventDefault()
     setDragOverCol(null)
@@ -134,12 +150,17 @@ export default function AdminOrderPage() {
     // 沒變動就不打 API
     if (order.status === targetStatus) return
 
+    // 樂觀更新 + 標記 in-flight
+    pendingDragRef.current.set(orderId, targetStatus)
     setOrders((prev: any[]) => prev.map(o =>
       o.order_id === orderId ? { ...o, status: targetStatus } : o
     ))
 
     const apiKey = keyToApi[targetStatus]
-    if (!apiKey) return
+    if (!apiKey) {
+      pendingDragRef.current.delete(orderId)
+      return
+    }
 
     try {
       const res = await fetch('/api/orders/status', {
@@ -147,13 +168,23 @@ export default function AdminOrderPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: orderId, status: apiKey }),
       })
-      const data = await res.json()
-      if (!data.success) {
-        alert(data.error || '更新失敗')
+      const data = await res.json().catch(() => ({ success: false, error: 'JSON 解析失敗' }))
+      if (!res.ok || !data.success) {
+        // 401 / 500 / 業務錯誤都走這條：放掉 in-flight 標記再 fetch 回正
+        pendingDragRef.current.delete(orderId)
+        const msg = res.status === 401
+          ? '登入狀態失效，請重新登入後再試'
+          : (data.error || `更新失敗（HTTP ${res.status}）`)
+        alert(msg)
         fetchOrders()
+        return
       }
+      // 成功：等下次 auto-refresh 就會帶回真實狀態，所以可以放掉標記了
+      pendingDragRef.current.delete(orderId)
     } catch (err) {
+      pendingDragRef.current.delete(orderId)
       console.error('Failed to update order status:', err)
+      alert('連線錯誤，狀態未更新')
       fetchOrders()
     }
   }, [orders, fetchOrders])
