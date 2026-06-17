@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
 import { computeAvailability } from '@/lib/availability'
+import { computeOrderConsumption, findInsufficientIngredients } from '@/lib/order-consumption'
 import { NextResponse } from 'next/server'
 
 // ============================================================
@@ -162,7 +163,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // 預檢可售性：任一品項 blocked 直接擋下
+    // 預檢可售性
+    //   (1) 任一品項 blocked（庫存已 <= 暫停接單點）→ 直接擋下
+    //   (2) 算 cart 總食材需求（含 addon），任一食材總需求 > 庫存 → 擋下
+    //       這條補上「炸排骨 8 個還能下 10 份結果庫存變 -2」的洞。
     const availability = computeAvailability()
     const availMap = new Map(availability.map(a => [a.item_id, a]))
     const blockedNames: string[] = []
@@ -178,6 +182,23 @@ export async function POST(request: Request) {
     }
 
     const db = getDb()
+
+    // 算「這張單」的食材總需求（含 addon → ref item recipe）
+    const cartConsumption = computeOrderConsumption(db, items.map((it: { item_id: number; quantity: number; customizations?: string[][] }) => ({
+      item_id: Number(it.item_id),
+      quantity: Number(it.quantity),
+      customizations: Array.isArray(it.customizations) ? it.customizations : [],
+    })))
+    const insufficient = findInsufficientIngredients(db, cartConsumption)
+    if (insufficient.length > 0) {
+      const msg = insufficient
+        .map(i => `${i.ingredient_name} 需 ${i.needed.toFixed(2)} / 庫存 ${i.in_stock.toFixed(2)}`)
+        .join('；')
+      return NextResponse.json(
+        { success: false, error: `庫存不足：${msg}` },
+        { status: 400 }
+      )
+    }
 
     // 產生訂單編號：A + YYYYMMDD + 4 碼當日流水（從 DB max 推算 + 1）
     // 注意：order_date 必須是 YYYY-MM-DD（reports 用 dashed 格式查詢）；

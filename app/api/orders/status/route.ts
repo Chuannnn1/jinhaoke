@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { computeOrderConsumption } from '@/lib/order-consumption'
 
 // ============================================================
 // 型別定義
@@ -17,15 +18,8 @@ interface ApiResponse {
 interface OrderItemRow {
   item_id: number
   quantity: number
+  customizations: string | null
   item_name: string
-}
-
-interface RecipeRow {
-  item_id: number
-  ingredient_name: string
-  consume_qty: number
-  stock: number
-  stock_unit: string
 }
 
 // ============================================================
@@ -64,9 +58,9 @@ export async function PATCH(request: Request) {
 
     // ── 以下只有「已完成」才會執行到 ──
 
-    // Step 1：查這張訂單的品項和數量
+    // Step 1：查這張訂單的品項 + quantity + 客製化
     const orderItems = db.prepare(`
-      SELECT oi.item_id, oi.quantity, mi.name AS item_name
+      SELECT oi.item_id, oi.quantity, oi.customizations, mi.name AS item_name
       FROM order_item oi
       JOIN menu_item mi ON oi.item_id = mi.item_id
       WHERE oi.order_id = ?
@@ -81,18 +75,19 @@ export async function PATCH(request: Request) {
       return NextResponse.json<ApiResponse>({ success: true })
     }
 
-    // Step 2：查這些品項的配方（每份消耗多少食材）
-    //   - 沒有配方的品項（單點類）→ 不扣庫存，log warning，但不阻擋完成
-    //   - itemIds 一定非空（上面已 return），不會踩到 `IN ()` 語法錯
-    const itemIds = orderItems.map(i => i.item_id)
-    const recipes = db.prepare(`
-      SELECT r.item_id, r.ingredient_name, r.consume_qty, i.stock_qty AS stock, i.stock_unit
-      FROM recipe r
-      JOIN ingredient i ON r.ingredient_name = i.name
-      WHERE r.item_id IN (${itemIds.map(() => '?').join(',')})
-    `).all(...itemIds) as RecipeRow[]
+    // Step 2：用共用 helper 算總消耗
+    //   - 包含 base item recipe + 每筆客製化 addon 對應的 ref item recipe
+    //   - 沒 recipe 的品項自動跳過（單點類無配方就無扣料）
+    const consumption = computeOrderConsumption(db, orderItems.map(o => {
+      let cust: string[][] = []
+      try {
+        const parsed = JSON.parse(o.customizations ?? '[]')
+        if (Array.isArray(parsed)) cust = parsed
+      } catch { /* 容錯 */ }
+      return { item_id: o.item_id, quantity: o.quantity, customizations: cust }
+    }))
 
-    // Step 3：Transaction 包在一起 —— 更新狀態 + 扣庫存
+    // Step 3：Transaction 包在一起 — 更新狀態 + 扣庫存
     const updateIngredient = db.prepare(`
       UPDATE ingredient
       SET stock_qty = stock_qty - ?
@@ -103,19 +98,11 @@ export async function PATCH(request: Request) {
       db.prepare(`UPDATE "order" SET status = ? WHERE order_id = ?`)
         .run('已完成', body.order_id)
 
-      // 3b. 扣庫存：對每個品項 × 每個食材
-      for (const orderItem of orderItems) {
-        const itemRecipes = recipes.filter(r => r.item_id === orderItem.item_id)
-        if (itemRecipes.length === 0) {
-          console.warn(`[orders/status] item ${orderItem.item_id} (${orderItem.item_name}) 無配方，跳過扣庫存`)
-          continue
-        }
-        for (const recipe of itemRecipes) {
-          const consumed = recipe.consume_qty * orderItem.quantity
-          const result = updateIngredient.run(consumed, recipe.ingredient_name)
-          if (result.changes === 0) {
-            console.warn(`[orders/status] 食材 "${recipe.ingredient_name}" 不存在，跳過扣除`)
-          }
+      // 3b. 扣庫存：遍歷消耗 map
+      for (const [ingName, qty] of consumption) {
+        const result = updateIngredient.run(qty, ingName)
+        if (result.changes === 0) {
+          console.warn(`[orders/status] 食材 "${ingName}" 不存在，跳過扣除`)
         }
       }
     })()
