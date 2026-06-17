@@ -6,4 +6,6 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 tsconfig.tsbuildinfo
-public/uploads/
+public/uploads/data/*.db.*
+data/*.db-shm.*
+data/*.db-wal.*
