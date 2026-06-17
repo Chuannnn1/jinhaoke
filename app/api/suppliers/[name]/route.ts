@@ -10,6 +10,7 @@ interface Supplier {
 }
 
 interface UpdateSupplierBody {
+  name?: string
   phone?: string
   owner_name?: string | null
   category?: string
@@ -95,12 +96,34 @@ export async function PUT(
       values.push(body.category)
     }
 
+    // 名稱改名（PK rename，ON UPDATE CASCADE 會自動更新 FK）
+    const newName = body.name?.trim()
+    if (newName && newName !== params.name) {
+      if (newName === '') {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: '供應商名稱不能為空' },
+          { status: 400 }
+        )
+      }
+      const conflict = db.prepare('SELECT name FROM supplier WHERE name = ?').get(newName)
+      if (conflict) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: '該供應商名稱已存在' },
+          { status: 409 }
+        )
+      }
+      sets.push('name = ?')
+      values.push(newName)
+    }
+
+    const lookupName = newName && newName !== params.name ? newName : params.name
+
     if (sets.length > 0) {
       values.push(params.name)
       db.prepare(`UPDATE supplier SET ${sets.join(', ')} WHERE name = ?`).run(...values)
     }
 
-    const updated = db.prepare(SELECT_SQL).get(params.name) as Supplier
+    const updated = db.prepare(SELECT_SQL).get(lookupName) as Supplier
 
     return NextResponse.json<ApiResponse<Supplier>>({ success: true, data: updated })
   } catch (err) {

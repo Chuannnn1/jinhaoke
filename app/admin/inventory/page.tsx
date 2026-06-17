@@ -282,6 +282,8 @@ function InventoryTab() {
   }
 
   const handleSupplierChange = async (item: InventoryItem, supplier_name: string | null) => {
+    // optimistic update
+    setInventory(prev => prev.map(i => i.name === item.name ? { ...i, supplier_name } : i))
     try {
       const res = await fetch(`/api/inventory/${encodeURIComponent(item.name)}`, {
         method: 'PATCH',
@@ -289,9 +291,12 @@ function InventoryTab() {
         body: JSON.stringify({ supplier_name }),
       })
       const data = await res.json()
-      if (data.success) fetchInventory()
-      else window.alert(data.error || '更新失敗')
+      if (!data.success) {
+        setInventory(prev => prev.map(i => i.name === item.name ? { ...i, supplier_name: item.supplier_name } : i))
+        window.alert(data.error || '更新失敗')
+      }
     } catch {
+      setInventory(prev => prev.map(i => i.name === item.name ? { ...i, supplier_name: item.supplier_name } : i))
       window.alert('網路錯誤')
     }
   }
@@ -745,6 +750,7 @@ function SuppliersTab() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            name: formName.trim(),
             phone: formPhone,
             owner_name: formOwner.trim() || null,
             category: formCategory,
@@ -922,13 +928,9 @@ function SuppliersTab() {
                   type="text"
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
-                  disabled={!!editTarget}
                   placeholder="肉品大王"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay disabled:bg-gray-50 disabled:text-ink/40"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
-                {editTarget && (
-                  <p className="text-[11px] text-ink/30 mt-1">名稱為主鍵，無法修改</p>
-                )}
               </div>
               <div className="flex gap-3">
                 <div className="flex-1">
