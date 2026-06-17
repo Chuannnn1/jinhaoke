@@ -15,6 +15,11 @@ interface SummaryBlock {
   prev_revenue: number
   prev_label: string
   change_pct: number | null
+  cost: number
+  prev_cost: number
+  profit: number
+  prev_profit: number
+  profit_change_pct: number | null
 }
 interface SeriesPoint { bucket: string; revenue: number; orders_count: number }
 interface TopItem { name: string; qty: number; revenue: number }
@@ -329,19 +334,23 @@ function LineChart({
           points={seg.map(p => `${p.x},${p.y}`).join(' ')}
         />
       ))}
-      {/* x 軸標籤 */}
+      {/* x 軸標籤
+          首尾 label clamp 到 chart 區內，避免在窄螢幕 / 卡片 padding 內被截掉。
+          全部用 textAnchor='middle' 並 clamp 後位置，視覺一致也不跑版。 */}
       {points.map((p, i) => {
         if (!xLabelIdxs.has(i)) return null
-        const isLast = i === points.length - 1
-        const isFirst = i === 0
+        const labelHalfWidth = 18                                     // 五字 'MM-DD' 約 28px 寬 / 2 + 4 安全餘量
+        const minX = padding.left + labelHalfWidth
+        const maxX = padding.left + innerW - labelHalfWidth
+        const clampedX = Math.max(minX, Math.min(maxX, p.x))
         return (
           <text
             key={i}
-            x={p.x}
+            x={clampedX}
             y={height - 8}
             fontSize="11"
             fill="#888"
-            textAnchor={isLast ? 'end' : isFirst ? 'start' : 'middle'}
+            textAnchor="middle"
           >
             {p.d.bucket.length === 10 ? p.d.bucket.slice(5) : p.d.bucket}
           </text>
@@ -634,8 +643,9 @@ export default function DashboardPage() {
         ) : !summary ? null : (
           <div className="grid grid-cols-12 gap-8">
 
-            {/* ── KPI 4 顆 ── */}
-            <div className="col-span-3">
+            {/* ── KPI 6 顆（兩列 × 3 卡）── */}
+            {/* 第一列：核心財務（含 sparkline）*/}
+            <div className="col-span-4">
               <KpiCard
                 label={`${theme.label}營收`}
                 value={`NT$ ${fmtMoney(summary.revenue)}`}
@@ -645,7 +655,25 @@ export default function DashboardPage() {
                 trend={overview!.kpi_trend_revenue}
               />
             </div>
-            <div className="col-span-3">
+            <div className="col-span-4">
+              <KpiCard
+                label="採購成本"
+                value={`NT$ ${fmtMoney(summary.cost)}`}
+                sub={`vs ${summary.prev_label} NT$ ${fmtMoney(summary.prev_cost)}`}
+                accent="#8B6F4D"
+              />
+            </div>
+            <div className="col-span-4">
+              <KpiCard
+                label="毛利"
+                value={`NT$ ${fmtMoney(summary.profit)}`}
+                sub={`vs ${summary.prev_label} NT$ ${fmtMoney(summary.prev_profit)}`}
+                accent={summary.profit >= 0 ? theme.hex : '#D44030'}
+                changePct={summary.profit_change_pct}
+              />
+            </div>
+            {/* 第二列：操作面 */}
+            <div className="col-span-4">
               <KpiCard
                 label="訂單數"
                 value={String(summary.orders_count)}
@@ -654,7 +682,7 @@ export default function DashboardPage() {
                 trend={overview!.kpi_trend_orders}
               />
             </div>
-            <div className="col-span-3">
+            <div className="col-span-4">
               <KpiCard
                 label="均單金額"
                 value={`NT$ ${fmtMoney(summary.avg_per_order)}`}
@@ -662,7 +690,7 @@ export default function DashboardPage() {
                 accent={theme.hex}
               />
             </div>
-            <div className="col-span-3">
+            <div className="col-span-4">
               <KpiCard
                 label="低庫存品項"
                 value={String(lowStockItems.length)}
