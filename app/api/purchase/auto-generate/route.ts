@@ -42,6 +42,7 @@ interface BodyItem {
   ingredient_name: string
   supplier_name: string
   order_qty: number
+  total_cost?: number
 }
 
 export async function POST(req: Request) {
@@ -198,6 +199,9 @@ function handleManualMode(
       ingredient_name: it.ingredient_name.trim(),
       supplier_name: it.supplier_name.trim(),
       order_qty: Math.round(qty * 10) / 10,
+      total_cost: (it.total_cost && Number.isFinite(it.total_cost) && it.total_cost > 0)
+        ? it.total_cost
+        : undefined,
     })
   }
   if (cleaned.length === 0) {
@@ -228,11 +232,17 @@ function handleManualMode(
     }
   }
 
-  // 按 supplier 分組（PK 衝突防護：同 supplier 內同食材合併 qty）
-  const bySupplier = new Map<string, Map<string, number>>()
+  // 按 supplier 分組（PK 衝突防護：同 supplier 內同食材合併 qty + cost）
+  const bySupplier = new Map<string, Map<string, { qty: number; userCost?: number }>>()
   for (const it of cleaned) {
-    const m = bySupplier.get(it.supplier_name) ?? new Map<string, number>()
-    m.set(it.ingredient_name, (m.get(it.ingredient_name) ?? 0) + it.order_qty)
+    const m = bySupplier.get(it.supplier_name) ?? new Map<string, { qty: number; userCost?: number }>()
+    const existing = m.get(it.ingredient_name)
+    if (existing) {
+      existing.qty += it.order_qty
+      if (it.total_cost) existing.userCost = (existing.userCost ?? 0) + it.total_cost
+    } else {
+      m.set(it.ingredient_name, { qty: it.order_qty, userCost: it.total_cost })
+    }
     bySupplier.set(it.supplier_name, m)
   }
 
@@ -253,7 +263,7 @@ function handleManualMode(
       const newPoId = Number(poResult.lastInsertRowid)
 
       let itemCount = 0
-      for (const [ingName, qty] of items) {
+      for (const [ingName, { qty, userCost }] of items) {
         // 嘗試吃 ingredient_supplier.price_per_order_unit × (qty / qty_per_order_unit) 估價
         const priceRow = db.prepare(`
           SELECT s.price_per_order_unit AS price, i.qty_per_order_unit AS perOrder
@@ -266,10 +276,13 @@ function handleManualMode(
             ? Math.round((priceRow.price * qty) / priceRow.perOrder * 100) / 100
             : 0
 
+        // 使用者提供的成本優先，否則用估算值
+        const finalCost = (userCost && userCost > 0) ? userCost : estCost
+
         db.prepare(`
           INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, total_cost)
           VALUES (?, ?, ?, ?)
-        `).run(newPoId, ingName, qty, estCost)
+        `).run(newPoId, ingName, qty, finalCost)
         result.covered_ingredients.push(ingName)
         itemCount++
       }

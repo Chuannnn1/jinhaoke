@@ -226,22 +226,22 @@ export async function POST(request: Request) {
       orderId = `${prefix}${String(nextSeq).padStart(4, '0')}`
 
       // 電話 / 姓名都選填：實務上只記電話居多，兩者都可缺
-      // 沒電話 → 產暫時電話佔位（給 FK 與外送顧客單一致性用）
-      phone = phoneTrim || `09${orderId.slice(-8)}`
+      phone = phoneTrim
       const customerNameForDb = nameTrim || '現場顧客'
 
-      // 1. upsert delivery_customer（避免 FK constraint fail）
-      //    沒填名字也補 '現場顧客' 預設，方便後台顯示
-      db.prepare(`
-        INSERT INTO delivery_customer (phone, name, address) VALUES (?, ?, '')
-        ON CONFLICT(phone) DO UPDATE SET name = excluded.name
-      `).run(phone, customerNameForDb)
+      // 1. upsert delivery_customer（有電話才寫，避免空號佔位）
+      if (phone) {
+        db.prepare(`
+          INSERT INTO delivery_customer (phone, name, address) VALUES (?, ?, '')
+          ON CONFLICT(phone) DO UPDATE SET name = excluded.name
+        `).run(phone, customerNameForDb)
+      }
 
       // 2. 寫入訂單主表（含選填 note）
       db.prepare(`
         INSERT INTO "order" (order_id, order_date, status, customer_phone, note)
         VALUES (?, ?, '待製作', ?, ?)
-      `).run(orderId, isoDate, phone, noteTrim || null)
+      `).run(orderId, isoDate, phone || null, noteTrim || null)
 
       // 3. 寫入訂單明細（用下單時的單價快照）
       //    - 防呆：item_id 缺漏 / 查不到 menu_item → throw，整個 transaction rollback

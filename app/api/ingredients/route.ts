@@ -21,6 +21,8 @@ interface CreateIngredientBody {
   order_unit: string
   qty_per_order_unit: number
   supplier_name?: string
+  category?: string
+  order_block_threshold?: number | null
 }
 
 interface ApiResponse<T = unknown> {
@@ -102,9 +104,13 @@ export async function POST(req: Request) {
     }
 
     // ── 寫入 ────────────────────────────
+    const category = body.category?.trim() || '其他'
+    const blockThreshold = (body.order_block_threshold !== undefined && body.order_block_threshold !== null)
+      ? body.order_block_threshold
+      : null
     db.prepare(`
-      INSERT INTO ingredient (name, stock_qty, safety_stock, stock_unit, order_unit, qty_per_order_unit, supplier_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ingredient (name, stock_qty, safety_stock, stock_unit, order_unit, qty_per_order_unit, supplier_name, category, order_block_threshold)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       body.name.trim(),
       body.stock_qty,
@@ -112,7 +118,9 @@ export async function POST(req: Request) {
       body.stock_unit.trim(),
       body.order_unit.trim(),
       body.qty_per_order_unit,
-      body.supplier_name?.trim() ?? null
+      body.supplier_name?.trim() ?? null,
+      category,
+      blockThreshold
     )
 
     // ── 回傳新建的完整物件 ────────────────
