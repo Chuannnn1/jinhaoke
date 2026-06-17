@@ -34,6 +34,12 @@ interface OverviewReport {
 }
 interface InventoryItem { name: string; stock_qty: number; safety_stock: number; stock_unit: string }
 interface RecentOrder { order_id: string; status: string; created_at: string; total: number }
+interface DrillOrderItem { item_id: number; name: string; quantity: number; unit_price: number; subtotal: number }
+interface DrillOrder {
+  order_id: string; status: string; created_at: string; total: number
+  customer_name: string; customer_phone: string | null; note: string | null
+  items: DrillOrderItem[]
+}
 
 // ── 主題色（呼應 clay 體系）──
 type Scope = 'today' | 'week' | 'month' | 'custom'
@@ -82,14 +88,17 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 
 // ── KPI 卡片 ──
 function KpiCard({
-  label, value, sub, accent, changePct, trend,
+  label, value, sub, accent, changePct, trend, onClick,
 }: {
   label: string; value: string; sub?: string; accent: string;
-  changePct?: number | null; trend?: number[]
+  changePct?: number | null; trend?: number[]; onClick?: () => void
 }) {
   const positive = (changePct ?? 0) >= 0
   return (
-    <div className="bg-paper rounded-2xl shadow-sm p-7 h-full border border-border/40 relative overflow-hidden">
+    <div
+      className={`bg-paper rounded-2xl shadow-sm p-7 h-full border border-border/40 relative overflow-hidden${onClick ? ' cursor-pointer hover:border-clay/60 hover:shadow-md transition-all' : ''}`}
+      onClick={onClick}
+    >
       <p className="text-xs text-ink-mute uppercase tracking-wider mb-3">{label}</p>
       <p className="text-4xl font-bold font-mono tracking-tight" style={{ color: accent }}>
         {value}
@@ -446,7 +455,25 @@ export default function DashboardPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
   const [loading, setLoading] = useState(true)
+  // 訂單 drill-down modal
+  const [drillOrders, setDrillOrders] = useState<DrillOrder[] | null>(null)
+  const [drillLoading, setDrillLoading] = useState(false)
+  const [drillDetail, setDrillDetail] = useState<DrillOrder | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const openDrillDown = async () => {
+    if (!overview) return
+    setDrillLoading(true)
+    setDrillOrders(null)
+    setDrillDetail(null)
+    try {
+      const { from, to } = overview.range
+      const res = await fetch(`/api/orders?from=${from}&to=${to}`)
+      const data = await res.json()
+      if (data.success) setDrillOrders(data.data)
+    } catch { /* silent */ }
+    finally { setDrillLoading(false) }
+  }
 
   const theme = THEMES[scope]
 
@@ -573,9 +600,10 @@ export default function DashboardPage() {
               <KpiCard
                 label="訂單數"
                 value={String(summary.orders_count)}
-                sub={`期間 ${overview!.range.from} → ${overview!.range.to}`}
+                sub={`期間 ${overview!.range.from} → ${overview!.range.to}　▸ 點擊查看`}
                 accent={theme.hex}
                 trend={overview!.kpi_trend_orders}
+                onClick={openDrillDown}
               />
             </div>
             <div className="col-span-4">
@@ -708,6 +736,116 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* 訂單列表 drill-down modal */}
+      {(drillOrders !== null || drillLoading) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h3 className="font-semibold text-ink text-base">
+                期間訂單
+                <span className="text-sm font-normal text-ink/50">
+                  {overview?.range.from} → {overview?.range.to}
+                </span>
+              </h3>
+              <button onClick={() => { setDrillOrders(null); setDrillDetail(null) }}
+                className="text-ink/40 hover:text-ink text-2xl leading-none">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {drillLoading ? (
+                <p className="text-center py-12 text-ink/40">載入中…</p>
+              ) : drillOrders && drillOrders.length === 0 ? (
+                <p className="text-center py-12 text-ink/40">期間內無訂單</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50">
+                    <tr className="text-xs text-ink/50 text-left">
+                      <th className="px-4 py-2.5 font-medium">訂單編號</th>
+                      <th className="px-4 py-2.5 font-medium">時間</th>
+                      <th className="px-4 py-2.5 font-medium text-center">狀態</th>
+                      <th className="px-4 py-2.5 font-medium text-right">金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drillOrders?.map((o, i) => (
+                      <tr key={o.order_id}
+                        onClick={() => setDrillDetail(o)}
+                        className={`border-t border-gray-100 cursor-pointer hover:bg-clay-soft/40 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                        <td className="px-4 py-2.5 font-mono text-xs text-ink/70">{o.order_id}</td>
+                        <td className="px-4 py-2.5 text-xs text-ink/50">{o.created_at?.replace('T', ' ').slice(0, 16)}</td>
+                        <td className="px-4 py-2.5 text-center"><StatusBadge status={o.status} /></td>
+                        <td className="px-4 py-2.5 text-right font-mono">NT$ {fmtMoney(o.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {drillOrders && (
+              <div className="px-6 py-3 border-t border-gray-200 text-xs text-ink/50 shrink-0">
+                共 {drillOrders.length} 筆訂單　·
+                合計 NT$ {fmtMoney(drillOrders.reduce((s, o) => s + o.total, 0))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 單筆訂單詳情 modal */}
+      {drillDetail && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-ink text-base font-mono">{drillDetail.order_id}</h3>
+                <p className="text-xs text-ink/50 mt-0.5">{drillDetail.created_at?.replace('T', ' ').slice(0, 16)}</p>
+              </div>
+              <button onClick={() => setDrillDetail(null)}
+                className="text-ink/40 hover:text-ink text-2xl leading-none">×</button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div className="flex gap-4 text-xs text-ink/60">
+                <span>顧客：{drillDetail.customer_name}</span>
+                <span>電話：{drillDetail.customer_phone || '—'}</span>
+                <StatusBadge status={drillDetail.status} />
+              </div>
+              {drillDetail.note && (
+                <p className="text-xs text-ink/50 bg-gray-50 px-3 py-1.5 rounded">備註：{drillDetail.note}</p>
+              )}
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-ink/40 border-b">
+                    <th className="py-1.5 text-left font-medium">品項</th>
+                    <th className="py-1.5 text-right font-medium">數量</th>
+                    <th className="py-1.5 text-right font-medium">單價</th>
+                    <th className="py-1.5 text-right font-medium">小計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drillDetail.items.map(it => (
+                    <tr key={it.item_id} className="border-t border-gray-100">
+                      <td className="py-1.5">{it.name}</td>
+                      <td className="py-1.5 text-right font-mono">{it.quantity}</td>
+                      <td className="py-1.5 text-right font-mono text-ink/50">${it.unit_price}</td>
+                      <td className="py-1.5 text-right font-mono">${fmtMoney(it.subtotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="text-right font-mono font-semibold text-base pt-2 border-t border-gray-200"
+                style={{ color: theme.hex }}>
+                合計 NT$ {fmtMoney(drillDetail.total)}
+              </div>
+            </div>
+            <div className="px-6 py-3 border-t border-gray-200 flex justify-end">
+              <button onClick={() => setDrillDetail(null)}
+                className="px-4 py-1.5 text-sm text-ink/50 hover:text-ink transition-colors">
+                關閉
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

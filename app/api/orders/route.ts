@@ -51,10 +51,24 @@ interface GroupedOrder {
 // ============================================================
 // GET /api/orders — 取得全部訂單
 // ============================================================
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const db = getDb()
-    const todayISO = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
+    const { searchParams } = new URL(request.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+
+    let dateClause: string
+    let dateParams: string[]
+    if (from && to) {
+      dateClause = 'o.order_date BETWEEN ? AND ?'
+      dateParams = [from, to]
+    } else {
+      const todayISO = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
+      dateClause = 'o.order_date = ?'
+      dateParams = [todayISO]
+    }
+
     const orders = db.prepare(`
       SELECT
         o.order_id,
@@ -74,9 +88,9 @@ export async function GET() {
       LEFT JOIN order_item oi ON o.order_id = oi.order_id
       LEFT JOIN menu_item mi ON oi.item_id = mi.item_id
       LEFT JOIN delivery_customer dc ON o.customer_phone = dc.phone
-      WHERE o.order_date = ?
+      WHERE ${dateClause}
       ORDER BY o.created_at DESC
-    `).all(todayISO) as (OrderRow & { customer_name: string | null; customer_phone: string | null })[]
+    `).all(...dateParams) as (OrderRow & { customer_name: string | null; customer_phone: string | null })[]
 
     // 將扁平的 join 結果整理成巢狀結構
     const grouped: Record<string, GroupedOrder> = {}
