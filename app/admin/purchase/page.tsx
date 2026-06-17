@@ -607,6 +607,26 @@ function CreatePOModal({
                   </option>
                 ))}
               </select>
+              {supplierOptions.length === 0 && category !== '全部' && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  分類「{category}」目前沒掛廠商。
+                  <button
+                    type="button"
+                    onClick={() => setCategory('全部')}
+                    className="ml-1 underline hover:text-amber-700"
+                  >
+                    改顯示全部
+                  </button>
+                  <span className="text-ink/40 mx-1">或</span>
+                  <a
+                    href="/admin/inventory?tab=suppliers"
+                    target="_blank"
+                    className="underline hover:text-amber-700"
+                  >
+                    去供應商管理分類
+                  </a>
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs text-ink/50 mb-1 block">狀態</label>
