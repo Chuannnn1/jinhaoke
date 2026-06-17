@@ -54,6 +54,7 @@ interface GroupedOrder {
 export async function GET() {
   try {
     const db = getDb()
+    const todayISO = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
     const orders = db.prepare(`
       SELECT
         o.order_id,
@@ -73,8 +74,9 @@ export async function GET() {
       LEFT JOIN order_item oi ON o.order_id = oi.order_id
       LEFT JOIN menu_item mi ON oi.item_id = mi.item_id
       LEFT JOIN delivery_customer dc ON o.customer_phone = dc.phone
+      WHERE o.order_date = ?
       ORDER BY o.created_at DESC
-    `).all() as (OrderRow & { customer_name: string | null; customer_phone: string | null })[]
+    `).all(todayISO) as (OrderRow & { customer_name: string | null; customer_phone: string | null })[]
 
     // 將扁平的 join 結果整理成巢狀結構
     const grouped: Record<string, GroupedOrder> = {}
