@@ -99,7 +99,7 @@ function KpiCard({
       className={`bg-paper rounded-2xl shadow-sm p-7 h-full border border-border/40 relative overflow-hidden${onClick ? ' cursor-pointer hover:border-clay/60 hover:shadow-md transition-all' : ''}`}
       onClick={onClick}
     >
-      <p className="text-xs text-ink-mute uppercase tracking-wider mb-3">{label}</p>
+      <p className="text-sm text-ink-mute uppercase tracking-wider mb-3">{label}</p>
       <p className="text-4xl font-bold font-mono tracking-tight" style={{ color: accent }}>
         {value}
       </p>
