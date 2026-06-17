@@ -24,6 +24,13 @@ interface SummaryBlock {
   prev_revenue: number
   prev_label: string
   change_pct: number | null  // null = 上期為 0 無法算
+  // 採購成本 / 毛利（含已訂購 + 已驗貨；不含已退貨）
+  // 採購 cost 是依 purchase_order.po_date 落在期間內計算
+  cost: number
+  prev_cost: number
+  profit: number              // revenue - cost
+  prev_profit: number
+  profit_change_pct: number | null
 }
 
 interface SeriesPoint {
@@ -159,8 +166,27 @@ export async function GET(req: Request) {
       WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
     `).get(prevFrom, prevTo) as { revenue: number }
 
+    // ── 採購成本 ─────────────────
+    // 採購單依 po_date 落在期間內計算；只算 status IN ('已訂購','已驗貨')，不含已退貨。
+    // 退貨會在 return_order 表反映：把 returned 的 qty 折算回成本扣回去（如果 schema 有單價）
+    // 目前簡化：直接吃 purchase_order.total_amount，已退貨整單就不算（最常見場景）
+    const costNow = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) AS cost
+      FROM purchase_order
+      WHERE po_date BETWEEN ? AND ? AND status IN ('已訂購', '已驗貨')
+    `).get(from, to) as { cost: number }
+    const costPrev = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) AS cost
+      FROM purchase_order
+      WHERE po_date BETWEEN ? AND ? AND status IN ('已訂購', '已驗貨')
+    `).get(prevFrom, prevTo) as { cost: number }
+
     const revenue = Math.round(sum.revenue)
     const prev_revenue = Math.round(prevSum.revenue)
+    const cost = Math.round(costNow.cost)
+    const prev_cost = Math.round(costPrev.cost)
+    const profit = revenue - cost
+    const prev_profit = prev_revenue - prev_cost
     const summary: SummaryBlock = {
       revenue,
       orders_count: sum.orders_count,
@@ -168,6 +194,11 @@ export async function GET(req: Request) {
       prev_revenue,
       prev_label: prevLabel,
       change_pct: pct(revenue, prev_revenue),
+      cost,
+      prev_cost,
+      profit,
+      prev_profit,
+      profit_change_pct: pct(profit, prev_profit),
     }
 
     // ── Timeseries ─────────────────
