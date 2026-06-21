@@ -817,7 +817,12 @@ function SuppliersTab() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[45%]" />
+            <col className="w-[30%]" />
+            <col className="w-[25%]" />
+          </colgroup>
           <thead>
             <tr className="bg-gray-50 text-ink/50 text-left text-xs uppercase tracking-wide">
               <th className="px-4 py-3 font-medium">名稱</th>
@@ -833,7 +838,7 @@ function SuppliersTab() {
                   idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/20'
                 }`}
               >
-                <td className="px-4 py-3 font-medium text-ink">{s.name}</td>
+                <td className="px-4 py-3 font-medium text-ink truncate">{s.name}</td>
                 <td className="px-4 py-3 text-ink/50 font-mono text-xs">{s.phone || '—'}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-2">
