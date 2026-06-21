@@ -372,10 +372,18 @@ export default function MenuPage() {
                       <span className="flex-1 ml-3 border-t border-clay/40"></span>
                     </div>
 
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm table-fixed">
+                      <colgroup>
+                        <col className="w-16" />
+                        <col className="w-[28%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[10%]" />
+                        <col />
+                        <col className="w-[14%]" />
+                      </colgroup>
                       <thead>
                         <tr className="bg-gray-50/60 text-ink/50 text-left text-xs uppercase tracking-wide">
-                          <th className="px-4 py-2 font-medium w-16 text-center">圖片</th>
+                          <th className="px-4 py-2 font-medium text-center">圖片</th>
                           <th className="px-4 py-2 font-medium">品名</th>
                           <th className="px-4 py-2 font-medium">標籤</th>
                           <th className="px-4 py-2 font-medium text-right">價格</th>
@@ -410,7 +418,7 @@ export default function MenuPage() {
                                   </div>
                                 )}
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-4 py-3 truncate">
                                 <span className="font-medium text-ink">{item.餐點名稱}</span>
                                 {inactive && (
                                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 align-middle">
@@ -418,11 +426,11 @@ export default function MenuPage() {
                                   </span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-ink/50 text-xs">{item.分類標籤 || '—'}</td>
+                              <td className="px-4 py-3 text-ink/50 text-xs truncate">{item.分類標籤 || '—'}</td>
                               <td className="px-4 py-3 text-right font-mono font-semibold text-ink">
                                 ${item.餐點價格}
                               </td>
-                              <td className="px-4 py-3 text-xs text-ink/50">
+                              <td className="px-4 py-3 text-xs text-ink/50 truncate">
                                 {item.餐點描述 || '—'}
                               </td>
                               <td className="px-4 py-3 text-right">
