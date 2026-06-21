@@ -491,7 +491,7 @@ export default function CustomerOrderPage() {
             <input
               type="tel"
               inputMode="tel"
-              placeholder="電話（選填）"
+              placeholder="末三碼即可（選填）"
               value={customerPhone}
               onChange={e => setCustomerPhone(e.target.value)}
               className="w-32 bg-white border border-border rounded-md px-3 py-2 text-[13px] text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-clay font-mono"

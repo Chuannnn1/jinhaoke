@@ -958,65 +958,65 @@ export default function AdminOrderPage() {
               {/* items table */}
               <div>
                 <p className="text-[11px] text-ink-mute uppercase tracking-wider mb-2">品項明細</p>
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="text-[11px] text-ink-mute">
-                      <th className="text-left pb-1.5 font-normal">品名</th>
-                      <th className="text-right pb-1.5 w-20 font-normal">單價</th>
-                      <th className="text-right pb-1.5 w-12 font-normal">數量</th>
-                      <th className="text-right pb-1.5 w-20 font-normal">小計</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(detailOrder.items ?? []).map((it: any, i: number) => {
-                      const detail: Array<Array<{ id: string; label: string; price: number }>> = it.customizations_detail ?? []
-                      const cAmount: number = it.customizations_amount ?? 0
-                      // 把 N 份的 addon 攤平統計：[{label, count, totalPrice}]
-                      const tally: Record<string, { label: string; count: number; price: number }> = {}
-                      for (const unit of detail) {
-                        for (const a of unit) {
-                          const k = a.label
-                          if (!tally[k]) tally[k] = { label: k, count: 0, price: a.price }
-                          tally[k].count++
-                        }
+                {(() => {
+                  const items = detailOrder.items ?? []
+                  // 展開每份為獨立 row
+                  type ExpandedRow = { name: string; unitPrice: number; qty: number; addons: Array<{ label: string; price: number }>; addonTotal: number; subtotal: number }
+                  const expanded: ExpandedRow[] = []
+                  for (const it of items) {
+                    const detail: Array<Array<{ id: string; label: string; price: number }>> = it.customizations_detail ?? []
+                    const qty = it.quantity ?? it.qty ?? 1
+                    const unitPrice = it.unit_price ?? 0
+                    const name = it.name ?? it.item_name ?? `?code${it.code}`
+                    if (detail.length > 0 && detail.length === qty) {
+                      for (const unitAddons of detail) {
+                        const addonTotal = unitAddons.reduce((s: number, a: { price: number }) => s + a.price, 0)
+                        expanded.push({ name, unitPrice, qty: 1, addons: unitAddons, addonTotal, subtotal: unitPrice + addonTotal })
                       }
-                      const chips = Object.values(tally)
-                      return (
-                        <tr key={i} className="border-t border-gray-200 align-top">
-                          <td className="py-2 text-ink/85">
-                            {it.name ?? it.item_name ?? `?code${it.code}`}
-                            {it.spice && it.spice !== '無' && (
-                              <span className="ml-2 text-[11px] text-clay">辣度 {it.spice}</span>
-                            )}
-                            {chips.length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {chips.map(c => (
-                                  <span
-                                    key={c.label}
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-clay-soft text-clay-deep border border-clay/20 font-mono"
-                                  >
-                                    {c.label} ×{c.count} <span className="text-ink-mute">+{c.count * c.price}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-2 text-right font-mono text-ink/60">
-                            {it.unit_price !== undefined ? `NT$ ${it.unit_price}` : '—'}
-                          </td>
-                          <td className="py-2 text-right font-mono">{it.quantity ?? it.qty ?? 1}</td>
-                          <td className="py-2 text-right font-mono text-ink">
-                            {it.subtotal !== undefined
-                              ? `NT$ ${it.subtotal}`
-                              : (it.unit_price !== undefined && it.qty !== undefined)
-                                ? `NT$ ${it.unit_price * it.qty + cAmount}`
-                                : '—'}
-                          </td>
+                    } else {
+                      const addonTotal = it.customizations_amount ?? 0
+                      expanded.push({ name, unitPrice, qty, addons: [], addonTotal, subtotal: unitPrice * qty + addonTotal })
+                    }
+                  }
+                  const hasCustomCol = expanded.some(r => r.addonTotal > 0)
+                  return (
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="text-[11px] text-ink-mute">
+                          <th className="text-left pb-1.5 font-normal">品名</th>
+                          <th className="text-right pb-1.5 w-20 font-normal">單價</th>
+                          <th className="text-right pb-1.5 w-12 font-normal">數量</th>
+                          {hasCustomCol && <th className="text-right pb-1.5 w-20 font-normal">客製化加價</th>}
+                          <th className="text-right pb-1.5 w-20 font-normal">小計</th>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {expanded.map((row, i) => (
+                          <tr key={i} className="border-t border-gray-200 align-top">
+                            <td className="py-2 text-ink/85">
+                              {row.name}
+                              {row.addons.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {row.addons.map((a, j) => (
+                                    <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-clay-soft text-clay-deep border border-clay/20 font-mono">
+                                      {a.label} <span className="text-ink-mute">+{a.price}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 text-right font-mono text-ink/60">NT$ {row.unitPrice}</td>
+                            <td className="py-2 text-right font-mono">{row.qty}</td>
+                            {hasCustomCol && (
+                              <td className="py-2 text-right font-mono text-clay">{row.addonTotal > 0 ? `+${row.addonTotal}` : '—'}</td>
+                            )}
+                            <td className="py-2 text-right font-mono text-ink">NT$ {row.subtotal}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                })()}
               </div>
 
               {/* note — editable */}
