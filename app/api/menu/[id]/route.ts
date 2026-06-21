@@ -137,7 +137,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -147,7 +147,18 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: '無效的品項 ID' }, { status: 400 })
     }
 
-    await pool.execute('UPDATE `餐點` SET `上下架狀態` = 0 WHERE `餐點編號` = ?', [id])
+    const { searchParams } = new URL(req.url)
+    if (searchParams.get('permanent') === '1') {
+      const [refs] = await pool.execute<RowDataPacket[]>(
+        'SELECT COUNT(*) AS cnt FROM `訂單明細` WHERE `餐點編號` = ?', [id]
+      )
+      if ((refs[0] as { cnt: number }).cnt > 0) {
+        return NextResponse.json({ success: false, error: '該品項有關聯訂單，無法刪除' }, { status: 400 })
+      }
+      await pool.execute('DELETE FROM `餐點` WHERE `餐點編號` = ?', [id])
+    } else {
+      await pool.execute('UPDATE `餐點` SET `上下架狀態` = 0 WHERE `餐點編號` = ?', [id])
+    }
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/menu/:id]', err)

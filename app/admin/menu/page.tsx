@@ -277,6 +277,18 @@ export default function MenuPage() {
     }
   }
 
+  const handlePermanentDelete = async (item: MenuItem) => {
+    if (!window.confirm(`確定要永久刪除「${item.餐點名稱}」？此操作無法復原。`)) return
+    try {
+      const res = await fetch(`/api/menu/${item.餐點編號}?permanent=1`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) fetchMenu()
+      else alert(data.error || '刪除失敗')
+    } catch {
+      alert('網路錯誤')
+    }
+  }
+
   return (
     <>
       <header className="h-16 bg-white border-b border-border flex items-center px-8 shrink-0">
@@ -447,12 +459,20 @@ export default function MenuPage() {
                                     編輯
                                   </button>
                                   {inactive ? (
-                                    <button
-                                      onClick={() => handleReactivate(item)}
-                                      className="px-3 py-1 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
-                                    >
-                                      重新上架
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() => handleReactivate(item)}
+                                        className="px-3 py-1 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+                                      >
+                                        重新上架
+                                      </button>
+                                      <button
+                                        onClick={() => handlePermanentDelete(item)}
+                                        className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium"
+                                      >
+                                        刪除
+                                      </button>
+                                    </>
                                   ) : (
                                     <button
                                       onClick={() => handleDelete(item)}

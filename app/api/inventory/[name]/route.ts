@@ -70,6 +70,44 @@ export async function PUT(
   }
 }
 
+// DELETE /api/inventory/:name — 刪除食材（需無引用）
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { name: string } }
+) {
+  try {
+    const pool = getPool()
+    const name = decodeURIComponent(params.name)
+
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT `食材名稱` FROM `食材` WHERE `食材名稱` = ?', [name]
+    )
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到該食材' }, { status: 404 })
+    }
+
+    const [recipeRefs] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) AS cnt FROM `食譜` WHERE `食材名稱` = ?', [name]
+    )
+    if ((recipeRefs[0] as { cnt: number }).cnt > 0) {
+      return NextResponse.json({ success: false, error: '該食材被食譜引用，無法刪除' }, { status: 400 })
+    }
+
+    const [poRefs] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) AS cnt FROM `採購單明細` WHERE `食材名稱` = ?', [name]
+    )
+    if ((poRefs[0] as { cnt: number }).cnt > 0) {
+      return NextResponse.json({ success: false, error: '該食材有採購單紀錄，無法刪除' }, { status: 400 })
+    }
+
+    await pool.execute('DELETE FROM `食材` WHERE `食材名稱` = ?', [name])
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[DELETE /api/inventory/:name]', err)
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
+  }
+}
+
 // PATCH /api/inventory/:name — 部分更新
 export async function PATCH(
   req: Request,
