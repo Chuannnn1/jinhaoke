@@ -24,12 +24,7 @@ interface InventoryItem {
 interface Supplier {
   name: string
   phone: string | null
-  owner_name: string | null
-  category: string
 }
-
-const SUPPLIER_CATEGORIES = ['全部', '豬', '雞', '牛', '魚', '其他'] as const
-const SUPPLIER_FORM_CATEGORIES = ['豬', '雞', '牛', '魚', '其他'] as const
 
 interface LowStockSupplierOption {
   supplier_name: string
@@ -679,14 +674,11 @@ function SuppliersTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState<typeof SUPPLIER_CATEGORIES[number]>('全部')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Supplier | null>(null)
   const [formName, setFormName] = useState('')
   const [formPhone, setFormPhone] = useState('')
-  const [formOwner, setFormOwner] = useState('')
-  const [formCategory, setFormCategory] = useState<typeof SUPPLIER_FORM_CATEGORIES[number]>('其他')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -706,17 +698,13 @@ function SuppliersTab() {
   useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
 
   const filtered = suppliers.filter(s => {
-    const matchSearch = search === '' || s.name.includes(search) || (s.phone && s.phone.includes(search)) || (s.owner_name && s.owner_name.includes(search))
-    const matchCat = activeCategory === '全部' || s.category === activeCategory
-    return matchSearch && matchCat
+    return search === '' || s.name.includes(search) || (s.phone && s.phone.includes(search))
   })
 
   const openNew = () => {
     setEditTarget(null)
     setFormName('')
     setFormPhone('')
-    setFormOwner('')
-    setFormCategory(activeCategory === '全部' ? '其他' : activeCategory)
     setFormError(null)
     setModalOpen(true)
   }
@@ -725,8 +713,6 @@ function SuppliersTab() {
     setEditTarget(s)
     setFormName(s.name)
     setFormPhone(s.phone ?? '')
-    setFormOwner(s.owner_name ?? '')
-    setFormCategory((SUPPLIER_FORM_CATEGORIES as readonly string[]).includes(s.category) ? (s.category as typeof SUPPLIER_FORM_CATEGORIES[number]) : '其他')
     setFormError(null)
     setModalOpen(true)
   }
@@ -751,9 +737,7 @@ function SuppliersTab() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: formName.trim(),
-            phone: formPhone,
-            owner_name: formOwner.trim() || null,
-            category: formCategory,
+            phone: formPhone.trim() || null,
           }),
         })
         const data = await res.json()
@@ -765,8 +749,6 @@ function SuppliersTab() {
           body: JSON.stringify({
             name: formName.trim(),
             phone: formPhone.trim() || undefined,
-            owner_name: formOwner.trim() || undefined,
-            category: formCategory,
           }),
         })
         const data = await res.json()
@@ -818,32 +800,10 @@ function SuppliersTab() {
         </div>
       </div>
 
-      {/* 分類 tab（豬/雞/牛/魚/其他）— 跟菜單管理同一組分類軸 */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {SUPPLIER_CATEGORIES.map(c => {
-          const count = c === '全部' ? suppliers.length : suppliers.filter(s => s.category === c).length
-          const isActive = activeCategory === c
-          return (
-            <button
-              key={c}
-              onClick={() => setActiveCategory(c)}
-              className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
-                isActive
-                  ? 'bg-ink text-white'
-                  : 'bg-white text-ink/60 border border-border hover:bg-gray-50'
-              }`}
-            >
-              {c}
-              <span className={`ml-1.5 text-[11px] ${isActive ? 'text-white/70' : 'text-ink/40'}`}>{count}</span>
-            </button>
-          )
-        })}
-      </div>
-
       <div className="flex items-center gap-3 mb-4">
         <input
           type="text"
-          placeholder="搜尋名稱 / 老闆 / 電話…"
+          placeholder="搜尋名稱 / 電話…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="px-3 py-2 border border-border rounded-lg text-sm w-64 bg-white focus:outline-none focus:ring-2 focus:ring-clay"
@@ -861,8 +821,6 @@ function SuppliersTab() {
           <thead>
             <tr className="bg-gray-50 text-ink/50 text-left text-xs uppercase tracking-wide">
               <th className="px-4 py-3 font-medium">名稱</th>
-              <th className="px-4 py-3 font-medium">分類</th>
-              <th className="px-4 py-3 font-medium">老闆</th>
               <th className="px-4 py-3 font-medium">電話</th>
               <th className="px-4 py-3 font-medium text-right">操作</th>
             </tr>
@@ -876,10 +834,6 @@ function SuppliersTab() {
                 }`}
               >
                 <td className="px-4 py-3 font-medium text-ink">{s.name}</td>
-                <td className="px-4 py-3">
-                  <span className="px-2 py-0.5 rounded text-[11px] bg-gray-100 text-ink/70">{s.category}</span>
-                </td>
-                <td className="px-4 py-3 text-ink/70">{s.owner_name || '—'}</td>
                 <td className="px-4 py-3 text-ink/50 font-mono text-xs">{s.phone || '—'}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-2">
@@ -931,32 +885,6 @@ function SuppliersTab() {
                   placeholder="肉品大王"
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="text-xs text-ink/50 mb-1 block">
-                    分類 <span className="text-red-400">*</span>
-                  </label>
-                  <select
-                    value={formCategory}
-                    onChange={e => setFormCategory(e.target.value as typeof SUPPLIER_FORM_CATEGORIES[number])}
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
-                  >
-                    {SUPPLIER_FORM_CATEGORIES.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-ink/50 mb-1 block">老闆姓名</label>
-                  <input
-                    type="text"
-                    value={formOwner}
-                    onChange={e => setFormOwner(e.target.value)}
-                    placeholder="（選填）"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-                  />
-                </div>
               </div>
               <div>
                 <label className="text-xs text-ink/50 mb-1 block">電話</label>
