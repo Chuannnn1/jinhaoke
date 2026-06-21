@@ -50,16 +50,16 @@ export async function GET(req: Request) {
     )
 
     const data = rows.map(r => ({
-      餐點編號: r.餐點編號,
-      餐點名稱: r.餐點名稱,
-      餐點分類: r.餐點分類,
-      餐點價格: r.餐點價格,
-      圖示: r.圖示,
-      分類標籤: r.分類標籤,
-      餐點描述: r.餐點描述,
-      上下架狀態: r.上下架狀態,
-      圖片網址: r.圖片網址,
-      客製化屬性: parseAddons(r.客製化屬性),
+      item_id: r.餐點編號,
+      name: r.餐點名稱,
+      category: r.餐點分類,
+      price: r.餐點價格,
+      emoji: r.圖示,
+      tag: r.分類標籤,
+      description: r.餐點描述,
+      active: r.上下架狀態,
+      image_url: r.圖片網址,
+      addons: parseAddons(r.客製化屬性),
     }))
 
     return NextResponse.json({ success: true, data })
@@ -109,7 +109,18 @@ export async function POST(req: Request) {
     const r = rows[0]
     return NextResponse.json({
       success: true,
-      data: { ...r, 客製化屬性: parseAddons(r.客製化屬性) },
+      data: {
+        item_id: r.餐點編號,
+        name: r.餐點名稱,
+        category: r.餐點分類,
+        price: r.餐點價格,
+        emoji: r.圖示,
+        tag: r.分類標籤,
+        description: r.餐點描述,
+        active: r.上下架狀態,
+        image_url: r.圖片網址,
+        addons: parseAddons(r.客製化屬性),
+      },
     }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/menu]', err)
