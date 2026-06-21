@@ -28,10 +28,20 @@ export async function PATCH(request: Request) {
     const dbStatus = statusMap[body.status] || body.status
     const pool = getPool()
 
+    // 取得目前狀態以寫入紀錄
+    const [curRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `訂單狀態` FROM `訂單` WHERE `訂單編號` = ?', [body.order_id]
+    )
+    const prevStatus = (curRows[0] as { 訂單狀態: string } | undefined)?.訂單狀態 ?? '待製作'
+
     if (dbStatus !== '已完成') {
       await pool.execute(
         'UPDATE `訂單` SET `訂單狀態` = ? WHERE `訂單編號` = ?',
         [dbStatus, body.order_id]
+      )
+      await pool.execute(
+        'INSERT INTO `訂單狀態紀錄` (`訂單編號`, `原始狀態`, `新狀態`, `變更時間`) VALUES (?, ?, ?, NOW())',
+        [body.order_id, prevStatus, dbStatus]
       )
       return NextResponse.json({ success: true })
     }
@@ -68,6 +78,10 @@ export async function PATCH(request: Request) {
       await conn.execute(
         'UPDATE `訂單` SET `訂單狀態` = ? WHERE `訂單編號` = ?',
         ['已完成', body.order_id]
+      )
+      await conn.execute(
+        'INSERT INTO `訂單狀態紀錄` (`訂單編號`, `原始狀態`, `新狀態`, `變更時間`) VALUES (?, ?, ?, NOW())',
+        [body.order_id, prevStatus, '已完成']
       )
 
       for (const [ingName, qty] of consumption) {
