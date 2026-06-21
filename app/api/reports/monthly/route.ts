@@ -1,6 +1,7 @@
 // app/api/reports/monthly/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
 interface MonthlyReport {
   year: number
@@ -26,7 +27,7 @@ interface ApiResponse<T = unknown> {
 // ============================================================
 export async function GET(req: Request) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const { searchParams } = new URL(req.url)
     const now = new Date()
     const year = parseInt(searchParams.get('year') ?? String(now.getFullYear()), 10)
@@ -44,14 +45,14 @@ export async function GET(req: Request) {
     const datePrefix = `${year}-${monthStr}`
 
     // ── 訂單筆數 + 總營收 ─────────────────
-    const stats = db.prepare(`
+    const stats = (await pool.execute<RowDataPacket[]>(`
       SELECT
-        COUNT(DISTINCT o.order_id) AS orders_count,
-        COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS total_revenue
-      FROM "order" o
-      JOIN order_item oi ON o.order_id = oi.order_id
-      WHERE o.order_date LIKE ? AND o.status = '已完成'
-    `).get(`${datePrefix}%`) as { orders_count: number; total_revenue: number }
+        COUNT(DISTINCT o.訂單編號) AS orders_count,
+        COALESCE(SUM(m.餐點價格 * od.數量), 0) AS total_revenue
+      FROM 訂單 o
+      JOIN 訂單明細 od ON o.訂單編號 = od.訂單編號
+      WHERE o.訂單日期 LIKE ? AND o.訂單狀態 = '已完成'
+    `, [`${datePrefix}%`]))[0][0] as { orders_count: number; total_revenue: number }
 
     const report: MonthlyReport = {
       year,

@@ -1,6 +1,6 @@
 // app/api/suppliers/[name]/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
 
 interface Supplier {
   name: string
@@ -10,7 +10,6 @@ interface Supplier {
 }
 
 interface UpdateSupplierBody {
-  name?: string
   phone?: string
   owner_name?: string | null
   category?: string
@@ -24,7 +23,7 @@ interface ApiResponse<T = unknown> {
 
 const CATEGORY_OPTIONS = new Set(['豬', '雞', '牛', '魚', '其他'])
 
-const SELECT_SQL = 'SELECT name, phone, owner_name, category FROM supplier WHERE name = ?'
+const SELECT_SQL = 'SELECT `供應商名稱`, `電話`, `負責人`, `分類` FROM `供應商` WHERE `供應商名稱` = ?'
 
 // ============================================================
 // GET /api/suppliers/:name
@@ -34,8 +33,9 @@ export async function GET(
   { params }: { params: { name: string } }
 ) {
   try {
-    const db = getDb()
-    const supplier = db.prepare(SELECT_SQL).get(params.name) as Supplier | undefined
+    const pool = getPool()
+    const [rows] = await pool.execute(SELECT_SQL, [params.name])
+    const supplier = (rows as Supplier[])[0]
 
     if (!supplier) {
       return NextResponse.json<ApiResponse>(
@@ -63,9 +63,10 @@ export async function PUT(
 ) {
   try {
     const body: UpdateSupplierBody = await req.json()
-    const db = getDb()
+    const pool = getPool()
 
-    const existing = db.prepare(SELECT_SQL).get(params.name) as Supplier | undefined
+    const [rows] = await pool.execute(SELECT_SQL, [params.name])
+    const existing = (rows as Supplier[])[0]
     if (!existing) {
       return NextResponse.json<ApiResponse>(
         { success: false, error: '找不到該供應商' },
@@ -77,12 +78,12 @@ export async function PUT(
     const values: (string | null)[] = []
 
     if (body.phone !== undefined) {
-      sets.push('phone = ?')
+      sets.push('`電話` = ?')
       values.push(body.phone.trim() === '' ? null : body.phone.trim())
     }
     if (Object.prototype.hasOwnProperty.call(body, 'owner_name')) {
       const v = body.owner_name
-      sets.push('owner_name = ?')
+      sets.push('`負責人` = ?')
       values.push(v === null || v === undefined || v.trim() === '' ? null : v.trim())
     }
     if (body.category !== undefined) {
@@ -92,38 +93,17 @@ export async function PUT(
           { status: 400 }
         )
       }
-      sets.push('category = ?')
+      sets.push('`分類` = ?')
       values.push(body.category)
     }
 
-    // 名稱改名（PK rename，ON UPDATE CASCADE 會自動更新 FK）
-    const newName = body.name?.trim()
-    if (newName && newName !== params.name) {
-      if (newName === '') {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: '供應商名稱不能為空' },
-          { status: 400 }
-        )
-      }
-      const conflict = db.prepare('SELECT name FROM supplier WHERE name = ?').get(newName)
-      if (conflict) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: '該供應商名稱已存在' },
-          { status: 409 }
-        )
-      }
-      sets.push('name = ?')
-      values.push(newName)
-    }
-
-    const lookupName = newName && newName !== params.name ? newName : params.name
-
     if (sets.length > 0) {
       values.push(params.name)
-      db.prepare(`UPDATE supplier SET ${sets.join(', ')} WHERE name = ?`).run(...values)
+      await pool.execute(`UPDATE \`供應商\` SET ${sets.join(', ')} WHERE \`供應商名稱\` = ?`, values)
     }
 
-    const updated = db.prepare(SELECT_SQL).get(lookupName) as Supplier
+    const [updatedRows] = await pool.execute(SELECT_SQL, [params.name])
+    const updated = (updatedRows as Supplier[])[0]
 
     return NextResponse.json<ApiResponse<Supplier>>({ success: true, data: updated })
   } catch (err) {
@@ -143,14 +123,15 @@ export async function DELETE(
   { params }: { params: { name: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
 
-    const existing = db.prepare('SELECT name FROM supplier WHERE name = ?').get(params.name)
+    const [rows] = await pool.execute('SELECT `供應商名稱` FROM `供應商` WHERE `供應商名稱` = ?', [params.name])
+    const existing = (rows as { 供應商名稱: string }[])[0]
     if (!existing) {
       return NextResponse.json<ApiResponse>({ success: true })
     }
 
-    db.prepare('DELETE FROM supplier WHERE name = ?').run(params.name)
+    await pool.execute('DELETE FROM `供應商` WHERE `供應商名稱` = ?', [params.name])
     return NextResponse.json<ApiResponse>({ success: true })
   } catch (err) {
     console.error('[DELETE /api/suppliers/:name]', err)

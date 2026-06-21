@@ -1,23 +1,24 @@
-import { getDb } from '@/lib/db'
+import { NextResponse } from 'next/server'
+import { getPool } from '@/lib/db'
 import { computeAvailability } from '@/lib/availability'
 import { computeOrderConsumption, findInsufficientIngredients } from '@/lib/order-consumption'
-import { NextResponse } from 'next/server'
+import type { RowDataPacket } from 'mysql2/promise'
 
 // ============================================================
 // 型別定義
 // ============================================================
-interface OrderRow {
-  order_id: string
-  status: string
-  created_at: string
-  note: string | null
-  item_id: number | null
-  quantity: number | null
-  item_name: string | null
-  price: number | null
-  customizations: string | null            // JSON string
-  customizations_amount: number | null
-  menu_addons: string | null               // menu_item.addons JSON
+interface OrderJoinRow extends RowDataPacket {
+  訂單編號: string
+  訂單狀態: string
+  訂單日期: string
+  備註: string | null
+  顧客電話: string | null
+  餐點編號: number | null
+  數量: number | null
+  餐點名稱: string | null
+  餐點價格: number | null
+  客製化: string | null
+  客製化屬性: string | null
 }
 
 interface AddonChoice {
@@ -27,23 +28,21 @@ interface AddonChoice {
 }
 
 interface OrderItem {
-  item_id: number
-  name: string
-  quantity: number
-  unit_price: number
-  subtotal: number                         // (unit_price * qty) + customizations_amount
-  customizations: string[][]               // 每份的 addon id 列表
-  customizations_amount: number
-  customizations_detail?: AddonChoice[][]  // 對應 customizations，但帶 label / price
+  餐點編號: number
+  餐點名稱: string
+  數量: number
+  餐點價格: number
+  小計: number
+  客製化: string[][]
+  客製化明細?: AddonChoice[][]
 }
 
 interface GroupedOrder {
-  order_id: string
-  customer_name: string
-  customer_phone: string | null
-  status: string
-  created_at: string
-  note: string | null
+  訂單編號: string
+  顧客電話: string | null
+  訂單狀態: string
+  訂單日期: string
+  備註: string | null
   items: OrderItem[]
   total: number
 }
@@ -51,93 +50,79 @@ interface GroupedOrder {
 // ============================================================
 // GET /api/orders — 取得全部訂單
 // ============================================================
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const db = getDb()
-    const { searchParams } = new URL(request.url)
-    const from = searchParams.get('from')
-    const to = searchParams.get('to')
-
-    let dateClause: string
-    let dateParams: string[]
-    if (from && to) {
-      dateClause = 'o.order_date BETWEEN ? AND ?'
-      dateParams = [from, to]
-    } else {
-      const todayISO = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
-      dateClause = 'o.order_date = ?'
-      dateParams = [todayISO]
-    }
-
-    const orders = db.prepare(`
+    const pool = getPool()
+    const [rows] = await pool.execute<OrderJoinRow[]>(`
       SELECT
-        o.order_id,
-        o.status,
-        o.created_at,
-        o.note,
-        o.customer_phone,
-        oi.item_id,
-        oi.quantity,
-        mi.name AS item_name,
-        oi.unit_price AS price,
-        oi.customizations,
-        oi.customizations_amount,
-        mi.addons AS menu_addons,
-        dc.name AS customer_name
-      FROM "order" o
-      LEFT JOIN order_item oi ON o.order_id = oi.order_id
-      LEFT JOIN menu_item mi ON oi.item_id = mi.item_id
-      LEFT JOIN delivery_customer dc ON o.customer_phone = dc.phone
-      WHERE ${dateClause}
-      ORDER BY o.created_at DESC
-    `).all(...dateParams) as (OrderRow & { customer_name: string | null; customer_phone: string | null })[]
+        o.\`訂單編號\`,
+        o.\`訂單狀態\`,
+        o.\`訂單日期\`,
+        o.\`備註\`,
+        o.\`顧客電話\`,
+        od.\`餐點編號\`,
+        od.\`數量\`,
+        od.\`客製化\`,
+        m.\`餐點名稱\`,
+        m.\`餐點價格\`,
+        m.\`客製化屬性\`
+      FROM \`訂單\` o
+      LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+      LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+      ORDER BY o.\`訂單日期\` DESC
+    `)
 
-    // 將扁平的 join 結果整理成巢狀結構
     const grouped: Record<string, GroupedOrder> = {}
-    for (const row of orders) {
-      if (!grouped[row.order_id]) {
-        grouped[row.order_id] = {
-          order_id: row.order_id,
-          customer_name: row.customer_name ?? '內用顧客',
-          customer_phone: row.customer_phone ?? null,
-          status: row.status,
-          created_at: row.created_at,
-          note: row.note ?? null,
+    for (const row of rows) {
+      if (!grouped[row.訂單編號]) {
+        grouped[row.訂單編號] = {
+          訂單編號: row.訂單編號,
+          顧客電話: row.顧客電話 ?? null,
+          訂單狀態: row.訂單狀態,
+          訂單日期: row.訂單日期,
+          備註: row.備註 ?? null,
           items: [],
           total: 0,
         }
       }
-      if (row.item_id !== null && row.price !== null) {
-        // 解析 customizations + 對應到 menu addons 補 label / price
+      if (row.餐點編號 !== null && row.餐點價格 !== null) {
         let customizations: string[][] = []
         try {
-          const parsed = JSON.parse(row.customizations ?? '[]')
+          const parsed = JSON.parse(row.客製化 ?? '[]')
           if (Array.isArray(parsed)) customizations = parsed
-        } catch { /* ignore malformed */ }
+        } catch { /* ignore */ }
+
         let menuAddons: AddonChoice[] = []
         try {
-          const parsed = JSON.parse(row.menu_addons ?? '[]')
+          const parsed = JSON.parse(row.客製化屬性 ?? '[]')
           if (Array.isArray(parsed)) menuAddons = parsed
         } catch { /* ignore */ }
+
         const addonMap = new Map(menuAddons.map(a => [a.id, a]))
         const detail: AddonChoice[][] = customizations.map(unit =>
           (Array.isArray(unit) ? unit : [])
             .map(id => addonMap.get(id))
             .filter((a): a is AddonChoice => !!a)
         )
-        const cAmount = row.customizations_amount ?? 0
-        const baseSubtotal = row.price * row.quantity!
-        grouped[row.order_id].items.push({
-          item_id: row.item_id,
-          name: row.item_name!,
-          quantity: row.quantity!,
-          unit_price: row.price,
-          subtotal: baseSubtotal + cAmount,
-          customizations,
-          customizations_amount: cAmount,
-          customizations_detail: detail.length > 0 ? detail : undefined,
+
+        let addonTotal = 0
+        for (const unit of detail) {
+          for (const a of unit) addonTotal += a.price
+        }
+
+        const baseSubtotal = row.餐點價格 * row.數量!
+        const subtotal = baseSubtotal + addonTotal
+
+        grouped[row.訂單編號].items.push({
+          餐點編號: row.餐點編號,
+          餐點名稱: row.餐點名稱!,
+          數量: row.數量!,
+          餐點價格: row.餐點價格,
+          小計: subtotal,
+          客製化: customizations,
+          客製化明細: detail.length > 0 ? detail : undefined,
         })
-        grouped[row.order_id].total += baseSubtotal + cAmount
+        grouped[row.訂單編號].total += subtotal
       }
     }
 
@@ -153,22 +138,12 @@ export async function GET(request: Request) {
 
 // ============================================================
 // POST /api/orders — 前台送出訂單
-//
-// 設計邏輯：
-// - "order" 表不存 customer_name，只存 customer_phone（FK → delivery_customer）
-// - delivery_customer 表存：phone(PK) / name / address
-// - 內用時沒有電話 → 用時間戳產生暫時電話
-// - note 存在 order 表的 customer_phone 欄位（實際上 DB 沒有 note 欄）
-//   目前 order 表沒有 note，先略過
 // ============================================================
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { customer_name, customer_phone, note, items } = body
+    const { customer_phone, note, items } = body
 
-    // 姓名與電話皆為「選填」：店家實務上通常只記電話，不一定要姓名
-    // 兩個都沒給也可以下單（無頭內用單）
-    const nameTrim = (typeof customer_name === 'string' ? customer_name : '').trim()
     const phoneTrim = (typeof customer_phone === 'string' ? customer_phone : '').trim()
     const noteTrim = (typeof note === 'string' ? note : '').trim()
 
@@ -180,10 +155,7 @@ export async function POST(request: Request) {
     }
 
     // 預檢可售性
-    //   (1) 任一品項 blocked（庫存已 <= 暫停接單點）→ 直接擋下
-    //   (2) 算 cart 總食材需求（含 addon），任一食材總需求 > 庫存 → 擋下
-    //       這條補上「炸排骨 8 個還能下 10 份結果庫存變 -2」的洞。
-    const availability = computeAvailability()
+    const availability = await computeAvailability()
     const availMap = new Map(availability.map(a => [a.item_id, a]))
     const blockedNames: string[] = []
     for (const item of items) {
@@ -197,15 +169,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const db = getDb()
-
-    // 算「這張單」的食材總需求（含 addon → ref item recipe）
-    const cartConsumption = computeOrderConsumption(db, items.map((it: { item_id: number; quantity: number; customizations?: string[][] }) => ({
+    // 算食材總需求，檢查庫存是否足夠
+    const cartItems = items.map((it: { item_id: number; quantity: number; customizations?: string[][] }) => ({
       item_id: Number(it.item_id),
       quantity: Number(it.quantity),
       customizations: Array.isArray(it.customizations) ? it.customizations : [],
-    })))
-    const insufficient = findInsufficientIngredients(db, cartConsumption)
+    }))
+    const cartConsumption = await computeOrderConsumption(cartItems)
+    const insufficient = await findInsufficientIngredients(cartConsumption)
     if (insufficient.length > 0) {
       const msg = insufficient
         .map(i => `${i.ingredient_name} 需 ${i.needed.toFixed(2)} / 庫存 ${i.in_stock.toFixed(2)}`)
@@ -216,59 +187,46 @@ export async function POST(request: Request) {
       )
     }
 
-    // 產生訂單編號：A + YYYYMMDD + 4 碼當日流水（從 DB max 推算 + 1）
-    // 注意：order_date 必須是 YYYY-MM-DD（reports 用 dashed 格式查詢）；
-    //       order_id 用 compact 格式保留流水號可讀性。
-    // 用台灣時區 (UTC+8) — 凌晨點餐避免 toISOString() (UTC) 把 order_date 算成前一天
-    const isoDate = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
-    const compact = isoDate.replace(/-/g, '')              // '20260609'
+    // 產生訂單編號：A + YYYYMMDD + 4 碼當日流水
+    const now = new Date(Date.now() + 8 * 3600 * 1000)
+    const isoDate = now.toISOString().slice(0, 10)
+    const compact = isoDate.replace(/-/g, '')
     const prefix = `A${compact}`
+    const datetimeStr = now.toISOString().slice(0, 19).replace('T', ' ')
 
-    const getMenu = db.prepare('SELECT price, addons FROM menu_item WHERE item_id = ?')
+    const pool = getPool()
 
-    // 為避免外層作用域沒辦法取回 orderId，宣告 let 讓 transaction 內 assign
+    // 查 menu 價格 + addons（驗證用）
+    const menuIds = items.map((it: { item_id: number }) => Number(it.item_id))
+    const menuPlaceholders = menuIds.map(() => '?').join(',')
+    const [menuRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT \`餐點編號\`, \`餐點價格\`, \`客製化屬性\` FROM \`餐點\` WHERE \`餐點編號\` IN (${menuPlaceholders})`,
+      menuIds
+    )
+    const menuMap = new Map(menuRows.map(r => [r.餐點編號 as number, r as { 餐點編號: number; 餐點價格: number; 客製化屬性: string }]))
+
+    // Transaction
+    const conn = await pool.getConnection()
     let orderId = ''
-    let phone = ''
+    try {
+      await conn.beginTransaction()
 
-    // Transaction：全部成功或全部失敗
-    // 流水號在 transaction 內查 max，better-sqlite3 single-thread + 同步 API
-    // 確保查詢→INSERT 之間不會被其它連線插入新單，避免 race。
-    db.transaction(() => {
-      // 0. 在 transaction 內查當日最大 order_id，推算下一個流水號
-      const last = db.prepare(
-        `SELECT order_id FROM "order" WHERE order_id LIKE ? ORDER BY order_id DESC LIMIT 1`
-      ).get(`${prefix}%`) as { order_id: string } | undefined
-      const nextSeq = last ? parseInt(last.order_id.slice(-4), 10) + 1 : 1
+      // 查流水號
+      const [lastRows] = await conn.execute<RowDataPacket[]>(
+        'SELECT `訂單編號` FROM `訂單` WHERE `訂單編號` LIKE ? ORDER BY `訂單編號` DESC LIMIT 1',
+        [`${prefix}%`]
+      )
+      const last = lastRows[0] as { 訂單編號: string } | undefined
+      const nextSeq = last ? parseInt(last.訂單編號.slice(-4), 10) + 1 : 1
       orderId = `${prefix}${String(nextSeq).padStart(4, '0')}`
 
-      // 電話 / 姓名都選填：實務上只記電話居多，兩者都可缺
-      phone = phoneTrim
-      const customerNameForDb = nameTrim || '現場顧客'
+      // INSERT 訂單
+      await conn.execute(
+        'INSERT INTO `訂單` (`訂單編號`, `訂單日期`, `訂單狀態`, `顧客電話`, `備註`) VALUES (?, ?, ?, ?, ?)',
+        [orderId, datetimeStr, '待製作', phoneTrim || null, noteTrim || null]
+      )
 
-      // 1. upsert delivery_customer（有電話才寫，避免空號佔位）
-      if (phone) {
-        db.prepare(`
-          INSERT INTO delivery_customer (phone, name, address) VALUES (?, ?, '')
-          ON CONFLICT(phone) DO UPDATE SET name = excluded.name
-        `).run(phone, customerNameForDb)
-      }
-
-      // 2. 寫入訂單主表（含選填 note）
-      db.prepare(`
-        INSERT INTO "order" (order_id, order_date, status, customer_phone, note)
-        VALUES (?, ?, '待製作', ?, ?)
-      `).run(orderId, isoDate, phone || null, noteTrim || null)
-
-      // 3. 寫入訂單明細（用下單時的單價快照）
-      //    - 防呆：item_id 缺漏 / 查不到 menu_item → throw，整個 transaction rollback
-      //    - quantity 必須 > 0
-      //    - customizations 是 array of arrays（每份的 addon id 列表），長度 = quantity（沒給就 []）
-      //      只接受品項自己定義的 addon id，否則整單 reject（避免前端傳假 addon 偷免費 / 用別品項 addon）
-      //    - customizations_amount = sum of addon prices across all units
-      const insertItem = db.prepare(`
-        INSERT INTO order_item (order_id, item_id, quantity, unit_price, customizations, customizations_amount)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
+      // INSERT 訂單明細
       for (const item of items) {
         const itemId = item?.item_id
         const quantity = Number(item?.quantity)
@@ -278,24 +236,23 @@ export async function POST(request: Request) {
         if (!Number.isFinite(quantity) || quantity <= 0) {
           throw new Error(`品項 ${itemId} 數量無效`)
         }
-        const menuItem = getMenu.get(itemId) as { price: number; addons: string } | undefined
+        const menuItem = menuMap.get(Number(itemId))
         if (!menuItem) {
           throw new Error(`找不到品項 ${itemId}`)
         }
 
         let menuAddons: { id: string; label: string; price: number }[] = []
         try {
-          const parsed = JSON.parse(menuItem.addons ?? '[]')
+          const parsed = JSON.parse(menuItem.客製化屬性 ?? '[]')
           if (Array.isArray(parsed)) menuAddons = parsed
-        } catch { /* 容錯：當作沒 addons */ }
+        } catch { /* ignore */ }
         const addonMap = new Map(menuAddons.map(a => [a.id, a]))
 
-        // 驗證 + 算金額
+        // 驗證 customizations
         const rawCust = Array.isArray(item?.customizations) ? item.customizations : []
         if (rawCust.length > 0 && rawCust.length !== quantity) {
           throw new Error(`品項 ${itemId} customizations 長度 ${rawCust.length} 不等於 quantity ${quantity}`)
         }
-        let cAmount = 0
         const normalized: string[][] = rawCust.map((unit: unknown, idx: number) => {
           if (!Array.isArray(unit)) {
             throw new Error(`品項 ${itemId} 客製化第 ${idx + 1} 份格式錯誤`)
@@ -303,26 +260,27 @@ export async function POST(request: Request) {
           const ids: string[] = []
           for (const a of unit) {
             const addonId = String(a)
-            const addon = addonMap.get(addonId)
-            if (!addon) {
+            if (!addonMap.has(addonId)) {
               throw new Error(`品項 ${itemId} 不支援 addon: ${addonId}`)
             }
             ids.push(addonId)
-            cAmount += addon.price
           }
           return ids
         })
 
-        insertItem.run(
-          orderId,
-          itemId,
-          quantity,
-          menuItem.price,
-          JSON.stringify(normalized),
-          cAmount
+        await conn.execute(
+          'INSERT INTO `訂單明細` (`訂單編號`, `餐點編號`, `數量`, `客製化`) VALUES (?, ?, ?, ?)',
+          [orderId, itemId, quantity, JSON.stringify(normalized)]
         )
       }
-    })()
+
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
+    }
 
     return NextResponse.json(
       { success: true, data: { order_id: orderId } },
@@ -331,7 +289,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('POST /api/orders error:', error)
     const msg = error instanceof Error ? error.message : '未知錯誤'
-    // 品項驗證錯誤回 400（前台可顯示），其它系統錯誤回 500
     const isClientError =
       msg.startsWith('找不到品項') ||
       msg.startsWith('品項缺少') ||

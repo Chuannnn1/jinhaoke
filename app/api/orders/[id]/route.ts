@@ -1,29 +1,21 @@
-// app/api/orders/[id]/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
-interface OrderItem {
-  item_id: number
-  name: string
-  quantity: number
-  unit_price: number
-  subtotal: number
+interface OrderRow extends RowDataPacket {
+  訂單編號: string
+  訂單日期: string
+  訂單狀態: string
+  顧客電話: string | null
+  備註: string | null
 }
 
-interface Order {
-  order_id: string
-  order_date: string
-  created_at: string
-  status: string
-  customer_phone: string | null
-  items: OrderItem[]
-  total: number
-}
-
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
+interface ItemRow extends RowDataPacket {
+  餐點編號: number
+  餐點名稱: string
+  數量: number
+  餐點價格: number
+  客製化: string | null
 }
 
 // ============================================================
@@ -34,88 +26,104 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
 
-    const order = db.prepare(`
-      SELECT order_id, order_date, created_at, status, customer_phone
-      FROM "order"
-      WHERE order_id = ?
-    `).get(params.id) as Omit<Order, 'items' | 'total'> | undefined
+    const [orders] = await pool.execute<OrderRow[]>(
+      'SELECT `訂單編號`, `訂單日期`, `訂單狀態`, `顧客電話`, `備註` FROM `訂單` WHERE `訂單編號` = ?',
+      [params.id]
+    )
 
-    if (!order) {
-      return NextResponse.json<ApiResponse>(
+    if (orders.length === 0) {
+      return NextResponse.json(
         { success: false, error: '找不到該訂單' },
         { status: 404 }
       )
     }
 
-    const items = db.prepare(`
-      SELECT oi.item_id, mi.name, oi.quantity, oi.unit_price,
-             (oi.unit_price * oi.quantity) AS subtotal
-      FROM order_item oi
-      JOIN menu_item mi ON oi.item_id = mi.item_id
-      WHERE oi.order_id = ?
-    `).all(params.id) as OrderItem[]
+    const order = orders[0]
 
-    const total = items.reduce((sum, item) => sum + item.subtotal, 0)
-    const fullOrder: Order = { ...order, items, total }
-
-    return NextResponse.json<ApiResponse<Order>>(
-      { success: true, data: fullOrder },
-      { status: 200 }
+    const [items] = await pool.execute<ItemRow[]>(
+      `SELECT od.\`餐點編號\`, m.\`餐點名稱\`, od.\`數量\`, m.\`餐點價格\`, od.\`客製化\`
+       FROM \`訂單明細\` od
+       JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+       WHERE od.\`訂單編號\` = ?`,
+      [params.id]
     )
 
+    const itemsData = items.map(it => ({
+      餐點編號: it.餐點編號,
+      餐點名稱: it.餐點名稱,
+      數量: it.數量,
+      餐點價格: it.餐點價格,
+      小計: it.餐點價格 * it.數量,
+      客製化: (() => { try { return JSON.parse(it.客製化 ?? '[]') } catch { return [] } })(),
+    }))
+
+    const total = itemsData.reduce((sum, it) => sum + it.小計, 0)
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        訂單編號: order.訂單編號,
+        訂單日期: order.訂單日期,
+        訂單狀態: order.訂單狀態,
+        顧客電話: order.顧客電話,
+        備註: order.備註,
+        items: itemsData,
+        total,
+      },
+    })
   } catch (err) {
     console.error('[GET /api/orders/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
+    return NextResponse.json(
+      { success: false, error: '伺服器錯誤' },
       { status: 500 }
     )
   }
 }
 
 // ============================================================
-// DELETE /api/orders/:id — 取消訂單（軟刪除：status 改為「已取消」）
-//
-// 商業邏輯：
-//   1. 「已完成」的訂單不能取消（已出餐扣庫存，取消會造成庫存不一致）
-//   2. 「已取消」的訂單再取消 → idempotent，回 200
-//   3. 「待製作 / 製作中 / 待付款」都可以取消
+// DELETE /api/orders/:id — 取消訂單（軟刪除：status → 已取消）
 // ============================================================
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
 
-    const order = db.prepare('SELECT order_id, status FROM "order" WHERE order_id = ?')
-      .get(params.id) as { order_id: string; status: string } | undefined
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `訂單編號`, `訂單狀態` FROM `訂單` WHERE `訂單編號` = ?',
+      [params.id]
+    )
 
-    if (!order) {
-      return NextResponse.json<ApiResponse>({ success: true })  // idempotent
+    if (rows.length === 0) {
+      return NextResponse.json({ success: true })
     }
 
-    if (order.status === '已完成') {
-      return NextResponse.json<ApiResponse>(
+    const order = rows[0] as { 訂單編號: string; 訂單狀態: string }
+
+    if (order.訂單狀態 === '已完成') {
+      return NextResponse.json(
         { success: false, error: '已完成之訂單無法取消，如需處理請聯絡管理員' },
         { status: 409 }
       )
     }
 
-    if (order.status === '已取消') {
-      return NextResponse.json<ApiResponse>({ success: true })  // idempotent
+    if (order.訂單狀態 === '已取消') {
+      return NextResponse.json({ success: true })
     }
 
-    db.prepare('UPDATE "order" SET status = ? WHERE order_id = ?')
-      .run('已取消', params.id)
+    await pool.execute(
+      'UPDATE `訂單` SET `訂單狀態` = ? WHERE `訂單編號` = ?',
+      ['已取消', params.id]
+    )
 
-    return NextResponse.json<ApiResponse>({ success: true })
-
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/orders/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
+    return NextResponse.json(
+      { success: false, error: '伺服器錯誤' },
       { status: 500 }
     )
   }

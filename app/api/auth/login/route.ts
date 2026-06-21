@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     }
 
     // 優先讀 env，fallback 讀 admin_setting DB
-    const expectedHash = getStoredHash()
+    const expectedHash = await getStoredHash()
     if (!expectedHash) {
       // 尚未設定 → 引導去 first-boot 註冊頁
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     const userAgent = req.headers.get('user-agent') ?? undefined
-    const { token, expiresAt } = createSession(userAgent)
+    const { token, expiresAt } = await createSession(userAgent)
 
     const res = NextResponse.json({ success: true, expires_at: expiresAt.toISOString() })
     res.headers.set('Set-Cookie', buildSessionCookie(token, expiresAt, req))

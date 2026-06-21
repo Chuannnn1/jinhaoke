@@ -1,6 +1,7 @@
 // app/api/purchase-orders/[id]/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
 interface PurchaseOrder {
   po_id: number
@@ -31,7 +32,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const poId = parseInt(params.id, 10)
     if (isNaN(poId)) {
       return NextResponse.json<ApiResponse>(
@@ -40,9 +41,7 @@ export async function GET(
       )
     }
 
-    const po = db.prepare(
-      'SELECT po_id, po_date, supplier_name, total_amount, status FROM purchase_order WHERE po_id = ?'
-    ).get(poId) as PurchaseOrder | undefined
+    const po = (await pool.execute<RowDataPacket[]>(`SELECT 採購單編號, 採購單日期, 供應商名稱, 進貨食材總成本, 採購單狀態 FROM 採購單 WHERE 採購單編號 = ?`, [poId]))[0][0] as PurchaseOrder | undefined
 
     if (!po) {
       return NextResponse.json<ApiResponse>(
@@ -51,9 +50,7 @@ export async function GET(
       )
     }
 
-    const items = db.prepare(
-      'SELECT ingredient_name, order_qty, total_cost FROM purchase_order_item WHERE po_id = ?'
-    ).all(poId) as PurchaseOrderItem[]
+    const items = (await pool.execute<RowDataPacket[]>(`SELECT 食材名稱, 數量 FROM 採購單明細 WHERE 採購單編號 = ?`, [poId]))[0] as PurchaseOrderItem[]
     po.items = items
 
     return NextResponse.json<ApiResponse<PurchaseOrder>>(

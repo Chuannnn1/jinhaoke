@@ -1,20 +1,8 @@
 // lib/order-consumption.ts
-//
 // 給一張訂單算「會消耗哪些食材、各多少」的共用 helper。
-// 同時給「下單 POST（pre-flight 擋下會把庫存吃成負的單）」與
-// 「狀態 PATCH 已完成（實際扣庫存）」使用。
-//
-// 客製化 addon 的扣料規則（依用戶確認）：
-//   加飯 / 加菜 / 加肉「都算一份」，扣料 = 對應單點 menu_item 的 recipe 一份。
-//   例：1 大比目魚便當 加魚排 → 跑「12 大比目魚排（單點）」的 recipe（1 片魚排）
-//      9 沙茶牛肉燴飯 加飯 → 跑「22 白米（單點）」的 recipe（0.3 公斤白米）
-//
-// addon id 對應參考 menu_item 的映射表，是 hard-code 而非 DB 設定，
-// 因為這是業務語意層（「加肉 = 那個品項的單點」），與 menu_item 的 addons 欄位定義對齊。
-import type Database from 'better-sqlite3'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
-// addon_id → base_item_id → ref_item_id
-// 舉例：base=1（大比目魚排便當）+ addon=extra_meat → ref=12（大比目魚排 單點）
 export const ADDON_TO_REF_ITEM: Record<string, Record<number, number>> = {
   extra_rice: {
     1: 22, 2: 22, 3: 22, 4: 22, 5: 22, 6: 22, 7: 22, 8: 22,
@@ -24,44 +12,29 @@ export const ADDON_TO_REF_ITEM: Record<string, Record<number, number>> = {
     9: 21, 10: 21, 11: 21,
   },
   extra_meat: {
-    1: 12,   // 大比目魚排便當 → 大比目魚排 單點
-    2: 13,   // 酥炸豬排便當 → 酥炸豬排 單點
-    3: 14,   // 酥嫩雞腿便當 → 酥嫩雞腿 單點
-    4: 15,   // 紅麴豬五花便當 → 紅麴豬五花 單點
-    5: 19,   // 酥炸排骨便當 → 酥炸排骨 單點
-    7: 20,   // 滷雞腿便當 → 滷雞腿 單點
-    8: 17,   // 滷排骨便當 → 滷排骨 單點
-    9: 16,   // 沙茶牛肉燴飯 → 沙茶燴牛肉 單點
-    10: 26,  // 沙茶雞柳燴飯 → 沙茶燴雞肉 單點
-    11: 18,  // 沙茶豬肉燴飯 → 沙茶燴豬肉 單點
+    1: 12, 2: 13, 3: 14, 4: 15, 5: 19, 7: 20, 8: 17,
+    9: 16, 10: 26, 11: 18,
   },
 }
 
 export interface OrderItemInput {
   item_id: number
   quantity: number
-  // 每份的 addon id 列表；長度應該等於 quantity（為 0 視為全 [] 沒客製化）
   customizations?: string[][]
 }
 
-interface RecipeRow {
-  item_id: number
-  ingredient_name: string
-  consume_qty: number
+interface RecipeRow extends RowDataPacket {
+  餐點編號: number
+  食材名稱: string
+  食材數量: number
 }
 
-/**
- * 計算一張訂單會消耗的食材總量。
- * 包含 base item recipe + 所有 addon 的 ref item recipe。
- * 回傳 ingredient_name → 總消耗量（stock_unit 下的量）的 Map。
- */
-export function computeOrderConsumption(
-  db: Database.Database,
+export async function computeOrderConsumption(
   items: OrderItemInput[]
-): Map<string, number> {
+): Promise<Map<string, number>> {
   const consumption = new Map<string, number>()
+  const pool = getPool()
 
-  // 蒐集所有要查 recipe 的 item_id：base + addon refs
   const allItemIds = new Set<number>()
   for (const it of items) {
     allItemIds.add(it.item_id)
@@ -77,34 +50,33 @@ export function computeOrderConsumption(
   if (allItemIds.size === 0) return consumption
 
   const ids = Array.from(allItemIds)
-  const recipes = db.prepare(`
-    SELECT item_id, ingredient_name, consume_qty
-    FROM recipe
-    WHERE item_id IN (${ids.map(() => '?').join(',')})
-  `).all(...ids) as RecipeRow[]
+  const placeholders = ids.map(() => '?').join(',')
+  const [rows] = await pool.execute<RecipeRow[]>(
+    `SELECT \`餐點編號\`, \`食材名稱\`, \`食材數量\`
+     FROM \`食譜\`
+     WHERE \`餐點編號\` IN (${placeholders})`,
+    ids
+  )
 
-  // 按 item_id 分群方便查
   const byItem = new Map<number, RecipeRow[]>()
-  for (const r of recipes) {
-    const arr = byItem.get(r.item_id)
+  for (const r of rows) {
+    const arr = byItem.get(r.餐點編號)
     if (arr) arr.push(r)
-    else byItem.set(r.item_id, [r])
+    else byItem.set(r.餐點編號, [r])
   }
 
   function addConsumption(itemId: number, multiplier: number) {
     const rs = byItem.get(itemId)
     if (!rs) return
     for (const r of rs) {
-      const cur = consumption.get(r.ingredient_name) ?? 0
-      consumption.set(r.ingredient_name, cur + r.consume_qty * multiplier)
+      const cur = consumption.get(r.食材名稱) ?? 0
+      consumption.set(r.食材名稱, cur + r.食材數量 * multiplier)
     }
   }
 
   for (const it of items) {
-    // base：扣 quantity 份
     addConsumption(it.item_id, it.quantity)
 
-    // 客製化：每個 unit 是一份；每個 addon 扣對應 ref item 一份
     const cust = it.customizations ?? []
     for (const unit of cust) {
       if (!Array.isArray(unit)) continue
@@ -124,21 +96,18 @@ interface InsufficientIngredient {
   in_stock: number
 }
 
-/**
- * 用消耗 Map 跟 ingredient 庫存比對。
- * 回傳不夠的食材清單；空陣列表示全部可下單。
- */
-export function findInsufficientIngredients(
-  db: Database.Database,
+export async function findInsufficientIngredients(
   consumption: Map<string, number>
-): InsufficientIngredient[] {
+): Promise<InsufficientIngredient[]> {
   if (consumption.size === 0) return []
+  const pool = getPool()
   const names = Array.from(consumption.keys())
-  const rows = db.prepare(`
-    SELECT name, stock_qty FROM ingredient
-    WHERE name IN (${names.map(() => '?').join(',')})
-  `).all(...names) as { name: string; stock_qty: number }[]
-  const stockByName = new Map(rows.map(r => [r.name, r.stock_qty]))
+  const placeholders = names.map(() => '?').join(',')
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT \`食材名稱\`, \`庫存數量\` FROM \`食材\` WHERE \`食材名稱\` IN (${placeholders})`,
+    names
+  )
+  const stockByName = new Map((rows as { 食材名稱: string; 庫存數量: number }[]).map(r => [r.食材名稱, r.庫存數量]))
 
   const insufficient: InsufficientIngredient[] = []
   for (const [ingName, needed] of consumption) {

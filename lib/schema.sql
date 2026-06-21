@@ -1,241 +1,122 @@
 -- ============================================================
--- 金濠客食堂 POS 系統 — 資料庫 Schema v3
--- 更新日期：2026-05-22（對齊 PDF 2026/5/20 版）
--- 設計決策：
---   1. 食材/供應商 PK 用 name（非 ID）
---   2. 進貨單拆成主表 + 明細（2NF）
---   3. order_item 存餐點單價快照（漲價不影響歷史）
---   4. 庫存於出餐時扣除，非下單時
---   5. 新增叫貨單位（order_unit / qty_per_order_unit）
+-- 金濠客食堂 POS 系統 — Schema v4 (MySQL / MariaDB)
+-- 更新日期：2026-06-20
+-- 對齊 ER 文件，全中文表名/欄位名
 -- ============================================================
 
-PRAGMA foreign_keys = ON;
+-- (1) 供應商
+CREATE TABLE IF NOT EXISTS `供應商` (
+    `供應商名稱`   VARCHAR(100) PRIMARY KEY,
+    `供應商電話`   TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (1) 供應商 supplier — PK 用 name
--- ============================================================
-CREATE TABLE IF NOT EXISTS supplier (
-    name        TEXT    PRIMARY KEY,                  -- 供應商名稱
-    phone       TEXT,
-    owner_name  TEXT,                                 -- 老闆姓名（NULLable）
-    category    TEXT    NOT NULL DEFAULT '其他'       -- 主分類（豬/雞/牛/魚/其他）
-);
-
--- ============================================================
--- (2) 食材 ingredient — PK 用 name（含叫貨單位設計）
--- ============================================================
-CREATE TABLE IF NOT EXISTS ingredient (
-    name                  TEXT    PRIMARY KEY,       -- 食材名稱（PK）
-    stock_qty             REAL    NOT NULL DEFAULT 0,  -- 庫存數量（stock_unit 下的量）
-    safety_stock          REAL    NOT NULL DEFAULT 0,  -- 安全存量（補貨警示點）
-    stock_unit            TEXT    NOT NULL,            -- 庫存計量單位（片 / 隻 / kg）
-    order_unit            TEXT    NOT NULL,            -- 叫貨單位（箱 / 包 / 盒）
-    qty_per_order_unit    REAL    NOT NULL,            -- 每個叫貨單位 = 多少 stock_unit
-    supplier_name         TEXT,                        -- FK → supplier.name
-    order_block_threshold REAL    DEFAULT NULL,        -- 接單暫停點；NULL 時 fallback 為 safety_stock * 0.2
-    category              TEXT    NOT NULL DEFAULT '其他',  -- 分類（豬/雞/牛/魚/其他），用來給「庫存→建採購單」帶 default
-    FOREIGN KEY (supplier_name) REFERENCES supplier(name)
+-- (2) 食材
+CREATE TABLE IF NOT EXISTS `食材` (
+    `食材名稱`     VARCHAR(100) PRIMARY KEY,
+    `庫存數量`     DOUBLE  NOT NULL DEFAULT 0,
+    `安全存量`     DOUBLE  NOT NULL DEFAULT 0,
+    `庫存單位`     VARCHAR(20) NOT NULL,
+    `供應商名稱`   VARCHAR(100),
+    FOREIGN KEY (`供應商名稱`) REFERENCES `供應商`(`供應商名稱`)
         ON UPDATE CASCADE ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX IF NOT EXISTS idx_ingredient_supplier ON ingredient(supplier_name);
-CREATE INDEX IF NOT EXISTS idx_ingredient_low_stock ON ingredient(stock_qty);
+-- (3) 餐點
+CREATE TABLE IF NOT EXISTS `餐點` (
+    `餐點編號`     INT PRIMARY KEY AUTO_INCREMENT,
+    `餐點名稱`     VARCHAR(100) NOT NULL UNIQUE,
+    `餐點分類`     VARCHAR(50),
+    `餐點價格`     INT NOT NULL,
+    `分類標籤`     VARCHAR(50) NOT NULL DEFAULT '其他',
+    `餐點描述`     TEXT,
+    `上下架狀態`   TINYINT NOT NULL DEFAULT 1,
+    `客製化屬性`   TEXT NOT NULL DEFAULT '[]',
+    `圖示`         VARCHAR(10) NOT NULL DEFAULT '',
+    `圖片網址`     TEXT NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (3) 餐點 menu_item
---   emoji  : 暫時顯示（未來替換成上傳照片）
---   tag    : 蛋白質分類（魚/豬/雞/牛/其他）— 前台篩選用
---   sub    : 副標說明（扁鱈/無骨/二片）
---   option : 加購說明（加肉60/加菜10）
--- ============================================================
-CREATE TABLE IF NOT EXISTS menu_item (
-    item_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT    NOT NULL UNIQUE,
-    category     TEXT,
-    price        INTEGER NOT NULL,
-    emoji        TEXT    NOT NULL DEFAULT '',
-    tag          TEXT    NOT NULL DEFAULT '其他',
-    sub          TEXT    NOT NULL DEFAULT '',
-    option       TEXT    NOT NULL DEFAULT '',          -- 文案用，例「加肉60/加菜10」
-    description  TEXT,
-    is_active    INTEGER NOT NULL DEFAULT 1,
-    image_url    TEXT    NOT NULL DEFAULT '',
-    -- 客製化 addons 結構（JSON array）。空 array = 此品項不可客製。
-    -- 每個 addon: { id, label, price }
-    -- 例：[{"id":"extra_meat","label":"加排骨","price":70},{"id":"extra_rice","label":"加飯","price":10}]
-    addons       TEXT    NOT NULL DEFAULT '[]'
-);
-
-CREATE INDEX IF NOT EXISTS idx_menu_category ON menu_item(category);
-CREATE INDEX IF NOT EXISTS idx_menu_active ON menu_item(is_active);
-CREATE INDEX IF NOT EXISTS idx_menu_tag ON menu_item(tag);
-
--- ============================================================
--- (4) 食譜 recipe — 餐點 M:N 食材（配方）
--- ============================================================
-CREATE TABLE IF NOT EXISTS recipe (
-    item_id          INTEGER NOT NULL,
-    ingredient_name  TEXT    NOT NULL,           -- FK → ingredient.name
-    consume_qty      REAL    NOT NULL,           -- 每份餐點消耗多少（stock_unit）
-    PRIMARY KEY (item_id, ingredient_name),
-    FOREIGN KEY (item_id) REFERENCES menu_item(item_id)
+-- (4) 食譜 — 消耗關係 (餐點 M:N 食材)
+CREATE TABLE IF NOT EXISTS `食譜` (
+    `餐點編號`     INT NOT NULL,
+    `食材名稱`     VARCHAR(100) NOT NULL,
+    `食材數量`     DOUBLE NOT NULL,
+    PRIMARY KEY (`餐點編號`, `食材名稱`),
+    FOREIGN KEY (`餐點編號`) REFERENCES `餐點`(`餐點編號`)
         ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (ingredient_name) REFERENCES ingredient(name)
+    FOREIGN KEY (`食材名稱`) REFERENCES `食材`(`食材名稱`)
         ON UPDATE CASCADE ON DELETE RESTRICT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX IF NOT EXISTS idx_recipe_item ON recipe(item_id);
-CREATE INDEX IF NOT EXISTS idx_recipe_ingredient ON recipe(ingredient_name);
+-- (5) 訂單
+CREATE TABLE IF NOT EXISTS `訂單` (
+    `訂單編號`     VARCHAR(20) PRIMARY KEY,
+    `訂單日期`     DATETIME NOT NULL,
+    `訂單狀態`     VARCHAR(20) NOT NULL DEFAULT '待製作',
+    `顧客電話`     VARCHAR(50),
+    `備註`         TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (5) 外送顧客單 delivery_customer
--- ============================================================
-CREATE TABLE IF NOT EXISTS delivery_customer (
-    phone        TEXT    PRIMARY KEY,            -- 顧客電話（PK）
-    house_number TEXT,                           -- 號碼
-    address      TEXT,                           -- 地址
-    name         TEXT
-);
-
--- ============================================================
--- (6) 顧客訂單 "order"
--- ============================================================
-CREATE TABLE IF NOT EXISTS "order" (
-    order_id       TEXT    PRIMARY KEY,          -- YYYYMMDD + 4碼流水號
-    order_date     TEXT    NOT NULL,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
-    updated_at     TEXT    NOT NULL DEFAULT (datetime('now', '+8 hours')),
-    status         TEXT    NOT NULL DEFAULT '待製作'
-                   CHECK (status IN ('待製作','製作中','待付款','已完成','已取消')),
-    customer_phone TEXT,                          -- 內用可 NULL
-    note           TEXT,                          -- 備註：辣度 / 顧客備註，import 時保留
-    FOREIGN KEY (customer_phone) REFERENCES delivery_customer(phone)
-        ON UPDATE CASCADE ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_order_date ON "order"(order_date);
-CREATE INDEX IF NOT EXISTS idx_order_status ON "order"(status);
-CREATE INDEX IF NOT EXISTS idx_order_phone ON "order"(customer_phone);
-
--- ============================================================
--- (7) 顧客訂單-包含 order_item
---     ★ 存單價快照（漲價不影響歷史訂單）
--- ============================================================
-CREATE TABLE IF NOT EXISTS order_item (
-    order_id     TEXT    NOT NULL,
-    item_id      INTEGER NOT NULL,
-    quantity     INTEGER NOT NULL CHECK (quantity > 0),
-    unit_price   INTEGER NOT NULL,               -- ★ 下單時的單價快照
-    -- 每份的客製化（JSON array，長度 = quantity）。
-    -- 每個元素是 addon id 陣列，例：[["extra_rice"], [], ["extra_meat","extra_rice"], []]
-    -- 空陣列 '[]' = 全部沒客製化（舊資料 / import 預設）
-    customizations TEXT  NOT NULL DEFAULT '[]',
-    -- 客製化加總金額（snapshot；省去 join 算 addon）
-    customizations_amount INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (order_id, item_id),
-    FOREIGN KEY (order_id) REFERENCES "order"(order_id)
+-- (6) 訂單明細 — 包含關係 (訂單 M:N 餐點)
+CREATE TABLE IF NOT EXISTS `訂單明細` (
+    `訂單編號`     VARCHAR(20) NOT NULL,
+    `餐點編號`     INT NOT NULL,
+    `數量`         INT NOT NULL CHECK (`數量` > 0),
+    `客製化`       TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (`訂單編號`, `餐點編號`),
+    FOREIGN KEY (`訂單編號`) REFERENCES `訂單`(`訂單編號`)
         ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (item_id) REFERENCES menu_item(item_id)
+    FOREIGN KEY (`餐點編號`) REFERENCES `餐點`(`餐點編號`)
         ON UPDATE CASCADE ON DELETE RESTRICT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (8) 進貨單 purchase_order（主表）— 含 total_amount
--- ============================================================
-CREATE TABLE IF NOT EXISTS purchase_order (
-    po_id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    po_date        TEXT    NOT NULL,
-    supplier_name  TEXT    NOT NULL,
-    total_amount   REAL    NOT NULL DEFAULT 0,    -- 總金額（驗貨後彙總）
-    status         TEXT    NOT NULL DEFAULT '已訂購'
-                   CHECK (status IN ('已訂購','已驗貨','已退貨')),
-    FOREIGN KEY (supplier_name) REFERENCES supplier(name)
+-- (7) 採購單
+CREATE TABLE IF NOT EXISTS `採購單` (
+    `採購單編號`   INT PRIMARY KEY AUTO_INCREMENT,
+    `採購單日期`   DATE NOT NULL,
+    `供應商名稱`   VARCHAR(100) NOT NULL,
+    `進貨食材總成本` DOUBLE NOT NULL DEFAULT 0,
+    `採購單狀態`   VARCHAR(20) NOT NULL DEFAULT '已下單',
+    FOREIGN KEY (`供應商名稱`) REFERENCES `供應商`(`供應商名稱`)
         ON UPDATE CASCADE ON DELETE RESTRICT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX IF NOT EXISTS idx_po_date ON purchase_order(po_date);
-CREATE INDEX IF NOT EXISTS idx_po_supplier ON purchase_order(supplier_name);
-CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_order(status);
-
--- ============================================================
--- (9) 進貨單明細 purchase_order_item
--- ============================================================
-CREATE TABLE IF NOT EXISTS purchase_order_item (
-    po_id            INTEGER NOT NULL,
-    ingredient_name  TEXT    NOT NULL,
-    order_qty        REAL    NOT NULL,           -- 進貨數量（stock_unit）
-    total_cost       REAL    NOT NULL DEFAULT 0, -- 總成本（驗貨後填入）
-    PRIMARY KEY (po_id, ingredient_name),
-    FOREIGN KEY (po_id) REFERENCES purchase_order(po_id)
+-- (8) 採購單明細 — 進貨關係 (採購單-食材)
+CREATE TABLE IF NOT EXISTS `採購單明細` (
+    `採購單編號`   INT NOT NULL,
+    `食材名稱`     VARCHAR(100) NOT NULL,
+    `數量`         DOUBLE NOT NULL,
+    PRIMARY KEY (`採購單編號`, `食材名稱`),
+    FOREIGN KEY (`採購單編號`) REFERENCES `採購單`(`採購單編號`)
         ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (ingredient_name) REFERENCES ingredient(name)
+    FOREIGN KEY (`食材名稱`) REFERENCES `食材`(`食材名稱`)
         ON UPDATE CASCADE ON DELETE RESTRICT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (10) 退貨單 return_order
---     同一 (po_id, ingredient_name) 可以有多筆退貨記錄
---     因此 PK 改用 return_id autoincrement；(po_id, ingredient_name) 留 index
--- ============================================================
-CREATE TABLE IF NOT EXISTS return_order (
-    return_id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    po_id            INTEGER NOT NULL,
-    ingredient_name  TEXT    NOT NULL,
-    return_date      TEXT    NOT NULL,
-    return_reason    TEXT,
-    return_qty       REAL    NOT NULL,
-    FOREIGN KEY (po_id, ingredient_name)
-        REFERENCES purchase_order_item(po_id, ingredient_name)
+-- (9) 退貨單 — 產生關係 (採購單 1:N 退貨單)
+CREATE TABLE IF NOT EXISTS `退貨單` (
+    `退貨單編號`   INT PRIMARY KEY AUTO_INCREMENT,
+    `採購單編號`   INT NOT NULL,
+    `食材名稱`     VARCHAR(100) NOT NULL,
+    `退貨單日期`   DATE NOT NULL,
+    `退貨原因`     TEXT,
+    `退貨數量`     DOUBLE NOT NULL,
+    FOREIGN KEY (`採購單編號`, `食材名稱`)
+        REFERENCES `採購單明細`(`採購單編號`, `食材名稱`)
         ON UPDATE CASCADE ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE INDEX IF NOT EXISTS idx_return_po ON return_order(po_id);
-CREATE INDEX IF NOT EXISTS idx_return_po_ing ON return_order(po_id, ingredient_name);
+-- (10) 管理員登入
+CREATE TABLE IF NOT EXISTS `管理員登入` (
+    `登入令牌`     VARCHAR(64) PRIMARY KEY,
+    `建立時間`     DATETIME NOT NULL,
+    `過期時間`     DATETIME NOT NULL,
+    `最後活動`     DATETIME,
+    `裝置資訊`     TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- (11) 後台登入 session（單一密碼 + 30 天 cookie）
---     刪除 row = 撤銷該 session；清空整表 = 強制所有 device 重新登入
--- ============================================================
-CREATE TABLE IF NOT EXISTS admin_session (
-    token       TEXT    PRIMARY KEY,
-    created_at  TEXT    NOT NULL,
-    expires_at  TEXT    NOT NULL,
-    last_seen   TEXT,
-    user_agent  TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_admin_session_expires ON admin_session(expires_at);
-
--- ============================================================
--- (10.5) 後台設定 admin_setting — 通用 key/value
---   存目前唯一一筆 key: 'admin_password_hash'（first-boot 註冊用）
---   未來要存其他設定也可重用這張表
---   優先順序：process.env.ADMIN_PASSWORD_HASH > admin_setting
---   （prod 部署用 env 寫死；dev/首次啟動用 wizard 寫進 DB）
--- ============================================================
-CREATE TABLE IF NOT EXISTS admin_setting (
-    key         TEXT    PRIMARY KEY,
-    value       TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL
-);
-
--- ============================================================
--- (11) 食材—供應商 ingredient_supplier — M:N（一品多廠）
---   每個食材可以從多家供應商叫貨。
---   is_primary=1 標示老闆預設用的廠商；建議每個食材至少 1 筆 primary。
---   price_per_order_unit 紀錄該廠商該品項的單價（可選，方便估價）。
--- ============================================================
-CREATE TABLE IF NOT EXISTS ingredient_supplier (
-    ingredient_name      TEXT    NOT NULL,
-    supplier_name        TEXT    NOT NULL,
-    is_primary           INTEGER NOT NULL DEFAULT 0,
-    price_per_order_unit REAL,
-    PRIMARY KEY (ingredient_name, supplier_name),
-    FOREIGN KEY (ingredient_name) REFERENCES ingredient(name)
-        ON UPDATE CASCADE ON DELETE CASCADE,
-    FOREIGN KEY (supplier_name) REFERENCES supplier(name)
-        ON UPDATE CASCADE ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_ing_sup_ingredient ON ingredient_supplier(ingredient_name);
-CREATE INDEX IF NOT EXISTS idx_ing_sup_supplier   ON ingredient_supplier(supplier_name);
+-- (11) 管理員設定
+CREATE TABLE IF NOT EXISTS `管理員設定` (
+    `設定鍵`       VARCHAR(100) PRIMARY KEY,
+    `設定值`       TEXT NOT NULL,
+    `更新時間`     DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
 // ============================================================
 // [id]/route.ts — 單筆操作（查詢、修改、軟刪除、上下架切換）
@@ -54,7 +55,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const id = parseInt(params.id, 10)
 
     if (isNaN(id)) {
@@ -64,9 +65,7 @@ export async function GET(
       )
     }
 
-    const item = db.prepare(
-      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url FROM menu_item WHERE item_id = ?'
-    ).get(id) as MenuItem | undefined
+    const item = (await pool.execute<RowDataPacket[]>(`SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0] as MenuItem | undefined
 
     if (!item) {
       return NextResponse.json<ApiResponse>(
@@ -93,7 +92,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const id = parseInt(params.id, 10)
 
     if (isNaN(id)) {
@@ -103,9 +102,7 @@ export async function PUT(
       )
     }
 
-    const existing = db.prepare(
-      'SELECT item_id FROM menu_item WHERE item_id = ?'
-    ).get(id)
+    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
 
     if (!existing) {
       return NextResponse.json<ApiResponse>(
@@ -138,7 +135,7 @@ export async function PUT(
     }
 
     values.push(id)
-    db.prepare(`UPDATE menu_item SET ${fields.join(', ')} WHERE item_id = ?`).run(...values)
+    await pool.execute(`UPDATE 餐點 SET ${fields.join(', ')} WHERE 餐點編號 = ?`)
 
     return NextResponse.json({ success: true })
   } catch (err) {
@@ -159,7 +156,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const id = parseInt(params.id, 10)
 
     if (isNaN(id)) {
@@ -169,9 +166,7 @@ export async function PATCH(
       )
     }
 
-    const existing = db.prepare(
-      'SELECT item_id FROM menu_item WHERE item_id = ?'
-    ).get(id)
+    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
 
     if (!existing) {
       return NextResponse.json<ApiResponse>(
@@ -188,7 +183,7 @@ export async function PATCH(
       )
     }
 
-    db.prepare('UPDATE menu_item SET is_active = ? WHERE item_id = ?').run(body.is_active, id)
+    await pool.execute(`UPDATE 餐點 SET 上下架狀態 = ? WHERE 餐點編號 = ?`, [body.is_active, id])
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[PATCH /api/menu/:id]', err)
@@ -207,7 +202,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const id = parseInt(params.id, 10)
 
     if (isNaN(id)) {
@@ -217,9 +212,7 @@ export async function DELETE(
       )
     }
 
-    const existing = db.prepare(
-      'SELECT item_id FROM menu_item WHERE item_id = ?'
-    ).get(id)
+    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
 
     if (!existing) {
       return NextResponse.json<ApiResponse>(
@@ -228,7 +221,7 @@ export async function DELETE(
       )
     }
 
-    db.prepare('UPDATE menu_item SET is_active = 0 WHERE item_id = ?').run(id)
+    await pool.execute(`UPDATE 餐點 SET is_active = 0 WHERE 餐點編號 = ?`, [id])
 
     return NextResponse.json({ success: true })
   } catch (err) {

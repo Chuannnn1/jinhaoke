@@ -1,55 +1,25 @@
-// app/api/inventory/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
-interface InventoryRow {
-  name: string
-  stock_qty: number
-  safety_stock: number
-  stock_unit: string
-  order_unit: string
-  qty_per_order_unit: number
-  supplier_name: string | null
-  order_block_threshold: number | null
-  category: string
+interface IngredientRow extends RowDataPacket {
+  食材名稱: string
+  庫存數量: number
+  安全存量: number
+  庫存單位: string
+  供應商名稱: string | null
 }
 
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
-}
-
-// ============================================================
-// GET /api/inventory — 查詢全部食材庫存（檢視用，給後台庫存頁）
-// ============================================================
+// GET /api/inventory
 export async function GET() {
   try {
-    const db = getDb()
-    const inventory = db.prepare(`
-      SELECT
-        i.name,
-        i.stock_qty,
-        i.safety_stock,
-        i.stock_unit,
-        i.order_unit,
-        i.qty_per_order_unit,
-        i.supplier_name,
-        i.order_block_threshold,
-        i.category
-      FROM ingredient i
-      ORDER BY i.name
-    `).all() as InventoryRow[]
-
-    return NextResponse.json<ApiResponse<InventoryRow[]>>(
-      { success: true, data: inventory },
-      { status: 200 }
+    const pool = getPool()
+    const [rows] = await pool.execute<IngredientRow[]>(
+      'SELECT `食材名稱`, `庫存數量`, `安全存量`, `庫存單位`, `供應商名稱` FROM `食材` ORDER BY `食材名稱`'
     )
+    return NextResponse.json({ success: true, data: rows })
   } catch (err) {
     console.error('[GET /api/inventory]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }

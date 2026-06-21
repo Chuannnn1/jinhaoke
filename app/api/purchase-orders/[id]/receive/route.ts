@@ -1,27 +1,19 @@
-// app/api/purchase-orders/[id]/receive/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
-
-interface ApiResponse {
-  success: boolean
-  error?: string
-}
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
 // ============================================================
 // POST /api/purchase-orders/:id/receive — 驗貨入庫
 //
-// 商業邏輯：
-//   1. 確認進貨單狀態不是已驗貨（不可重複執行）
-//   2. 根據 received_items 決定新狀態：
-//      - 全部等於 order_qty → 已驗貨
-//      - 有任何一項少於 order_qty → 部分退貨
-//   3. 實際入庫：ingredient.stock_qty += received_qty（以 stock_unit 為單位）
-//   4. total_amount 按比例重新計算
+// 邏輯：
+//   1. 確認採購單存在且狀態為「已下單」
+//   2. 將 received_items 的數量加入食材庫存
+//   3. 更新採購單狀態為「已到貨」
 // ============================================================
 interface ReceiveBody {
   received_items: Array<{
     ingredient_name: string
-    received_qty: number   // 實際收到的數量（stock_unit）
+    received_qty: number
   }>
 }
 
@@ -31,104 +23,101 @@ export async function POST(
 ) {
   try {
     const body: ReceiveBody = await req.json()
-    const db = getDb()
+    const pool = getPool()
     const poId = parseInt(params.id, 10)
 
     if (isNaN(poId)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的進貨單 ID' },
+      return NextResponse.json(
+        { success: false, error: '無效的採購單編號' },
         { status: 400 }
       )
     }
 
-    // ── 確認進貨單存在 ──────────────────
-    const po = db.prepare(
-      'SELECT po_id, status FROM purchase_order WHERE po_id = ?'
-    ).get(poId) as { po_id: number; status: string } | undefined
-
-    if (!po) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該進貨單' },
+    // 確認採購單存在
+    const [poRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `採購單編號`, `採購單狀態` FROM `採購單` WHERE `採購單編號` = ?',
+      [poId]
+    )
+    if (poRows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: '找不到該採購單' },
         { status: 404 }
       )
     }
-    if (po.status === '已驗貨') {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '該進貨單已驗貨完成，不可重複執行' },
+    const po = poRows[0] as { 採購單編號: number; 採購單狀態: string }
+
+    if (po.採購單狀態 === '已到貨') {
+      return NextResponse.json(
+        { success: false, error: '該採購單已驗貨完成，不可重複執行' },
+        { status: 409 }
+      )
+    }
+    if (po.採購單狀態 === '已取消') {
+      return NextResponse.json(
+        { success: false, error: '該採購單已取消' },
         { status: 409 }
       )
     }
 
-    // ── 驗證 received_items ─────────────
     if (!body.received_items || body.received_items.length === 0) {
-      return NextResponse.json<ApiResponse>(
+      return NextResponse.json(
         { success: false, error: 'received_items 不可為空' },
         { status: 400 }
       )
     }
+
+    // 驗證每項食材在採購單明細中存在
     for (const item of body.received_items) {
       if (typeof item.received_qty !== 'number' || item.received_qty < 0) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: `${item.ingredient_name} 的 received_qty 需為 >= 0 的數字` },
+        return NextResponse.json(
+          { success: false, error: `${item.ingredient_name} 的 received_qty 需 >= 0` },
+          { status: 400 }
+        )
+      }
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        'SELECT `數量` FROM `採購單明細` WHERE `採購單編號` = ? AND `食材名稱` = ?',
+        [poId, item.ingredient_name.trim()]
+      )
+      if (rows.length === 0) {
+        return NextResponse.json(
+          { success: false, error: `採購單中找不到食材：${item.ingredient_name}` },
           { status: 400 }
         )
       }
     }
 
-    // ── Transaction ──────────────────────
-    let hasPartialReturn = false
-    let totalReceivedCost = 0
+    // Transaction：入庫 + 更新狀態
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
 
-    for (const item of body.received_items) {
-      const poItem = db.prepare(
-        'SELECT order_qty, total_cost FROM purchase_order_item WHERE po_id = ? AND ingredient_name = ?'
-      ).get(poId, item.ingredient_name.trim()) as
-        { order_qty: number; total_cost: number } | undefined
-
-      if (!poItem) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: `進貨單中找不到食材：${item.ingredient_name}` },
-          { status: 400 }
-        )
-      }
-
-      if (item.received_qty < poItem.order_qty) {
-        hasPartialReturn = true
-      }
-
-      // 成本按比例攤提
-      const ratio = poItem.order_qty > 0 ? item.received_qty / poItem.order_qty : 0
-      totalReceivedCost += poItem.total_cost * ratio
-    }
-
-    db.transaction(() => {
-      // 1. 實際入庫
       for (const item of body.received_items) {
-        db.prepare(`
-          UPDATE ingredient
-          SET stock_qty = stock_qty + ?
-          WHERE name = ?
-        `).run(item.received_qty, item.ingredient_name.trim())
+        if (item.received_qty > 0) {
+          await conn.execute(
+            'UPDATE `食材` SET `庫存數量` = `庫存數量` + ? WHERE `食材名稱` = ?',
+            [item.received_qty, item.ingredient_name.trim()]
+          )
+        }
       }
 
-      // 2. 更新進貨單狀態與總金額
-      // 驗貨時即使有少收（hasPartialReturn）也只算 '已驗貨'；
-      // 退貨單獨流程：之後從 /api/purchase-orders/:id/return 才會推進到 '已退貨'。
-      const newStatus = '已驗貨'
-      void hasPartialReturn
-      db.prepare(`
-        UPDATE purchase_order
-        SET status = ?, total_amount = ?
-        WHERE po_id = ?
-      `).run(newStatus, Math.round(totalReceivedCost * 100) / 100, poId)
-    })()
+      await conn.execute(
+        'UPDATE `採購單` SET `採購單狀態` = ? WHERE `採購單編號` = ?',
+        ['已到貨', poId]
+      )
 
-    return NextResponse.json<ApiResponse>({ success: true })
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
+    }
 
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[POST /api/purchase-orders/:id/receive]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
+    return NextResponse.json(
+      { success: false, error: '伺服器錯誤' },
       { status: 500 }
     )
   }
