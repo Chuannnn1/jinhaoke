@@ -268,6 +268,18 @@ function InventoryTab() {
     }
   }
 
+  const handleDeleteIngredient = async (name: string) => {
+    if (!window.confirm(`確定要刪除食材「${name}」？如果有食譜或採購單引用將無法刪除。`)) return
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) fetchInventory()
+      else alert(data.error || '刪除失敗')
+    } catch {
+      alert('網路錯誤')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -312,7 +324,7 @@ function InventoryTab() {
         <div className="flex-1" />
         <button
           onClick={openLowStockModal}
-          disabled={autoGenLoading || lowLoading}
+          disabled={autoGenLoading || lowLoading || lowStockCount === 0}
           className="px-3 py-1.5 bg-clay text-white text-xs rounded-lg hover:bg-clay-deep transition-colors font-medium disabled:opacity-50"
           title="查看低於安全庫存的食材，選擇廠商後一鍵建單"
         >
@@ -412,6 +424,13 @@ function InventoryTab() {
                         className="text-ink/40 hover:text-clay transition-colors text-base"
                       >
                         ⚙
+                      </button>
+                      <button
+                        onClick={() => handleDeleteIngredient(item.name)}
+                        title="刪除食材"
+                        className="text-ink/30 hover:text-red-500 transition-colors text-sm"
+                      >
+                        ✕
                       </button>
                     </div>
                   </td>

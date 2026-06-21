@@ -577,42 +577,6 @@ export default function AdminOrderPage() {
                       </div>
                     </div>
 
-                    {unmappedCodes.length > 0 && (
-                      <div className="selectable border border-amber-200 bg-amber-50/40 rounded-lg px-3 py-2">
-                        <p className="text-[12px] text-amber-700 mb-2">
-                          以下 code 在菜單沒有對應，匯入時會被跳過。可在下方下拉手動指定：
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {unmappedCodes.map(code => (
-                            <div key={code} className="flex items-center gap-1.5 bg-white border border-amber-300 rounded-md px-2 py-1">
-                              <span className="font-mono text-[12px] text-amber-700">{code}</span>
-                              <span className="text-amber-600 text-[11px]">→</span>
-                              <select
-                                value={importMapping[String(code)] ?? ''}
-                                onChange={e => {
-                                  const v = e.target.value
-                                  setImportMapping(prev => {
-                                    const next = { ...prev }
-                                    if (v) next[String(code)] = parseInt(v, 10)
-                                    else delete next[String(code)]
-                                    return next
-                                  })
-                                }}
-                                className="text-[11px] border-0 focus:outline-none focus:ring-0 bg-transparent"
-                              >
-                                <option value="">忽略</option>
-                                {allOptions.map(opt => (
-                                  <option key={opt.item_id} value={opt.item_id}>
-                                    {opt.item_id}. {opt.name}{opt.is_active === 0 ? '（已下架）' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {/* 每個檔案一張展開卡 */}
                     <div className="space-y-2">
                       {filePreviews.map(fp => {
