@@ -105,7 +105,20 @@ CREATE TABLE IF NOT EXISTS `退貨單` (
         ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- (10) 管理員登入
+-- (10) 訂單狀態紀錄 — 紀錄關係 (訂單 1:N 狀態變更)
+CREATE TABLE IF NOT EXISTS `訂單狀態紀錄` (
+    `紀錄編號`     INT PRIMARY KEY AUTO_INCREMENT,
+    `訂單編號`     VARCHAR(20) NOT NULL,
+    `原始狀態`     VARCHAR(20) NOT NULL,
+    `新狀態`       VARCHAR(20) NOT NULL,
+    `變更時間`     DATETIME NOT NULL,
+    FOREIGN KEY (`訂單編號`) REFERENCES `訂單`(`訂單編號`)
+        ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX IF NOT EXISTS `idx_狀態紀錄_訂單` ON `訂單狀態紀錄`(`訂單編號`);
+
+-- (11) 管理員登入
 CREATE TABLE IF NOT EXISTS `管理員登入` (
     `登入令牌`     VARCHAR(64) PRIMARY KEY,
     `建立時間`     DATETIME NOT NULL,
