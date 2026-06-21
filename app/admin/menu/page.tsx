@@ -62,8 +62,19 @@ export default function MenuPage() {
     try {
       const res = await fetch('/api/menu?include_inactive=1')
       const data = await res.json()
-      if (data.success) setItems(data.data)
-      else setError(data.error || '讀取失敗')
+      if (data.success) {
+        setItems(data.data.map((r: Record<string, unknown>) => ({
+          餐點編號: r.item_id,
+          餐點名稱: r.name,
+          餐點分類: r.category,
+          餐點價格: r.price,
+          圖示: r.emoji,
+          分類標籤: r.tag,
+          餐點描述: r.description,
+          上下架狀態: r.active,
+          圖片網址: r.image_url,
+        })))
+      } else setError(data.error || '讀取失敗')
     } catch {
       setError('網路錯誤')
     } finally {
@@ -222,7 +233,7 @@ export default function MenuPage() {
         return
       }
 
-      const targetId = editTarget ? editTarget.餐點編號 : data.data?.餐點編號
+      const targetId = editTarget ? editTarget.餐點編號 : data.data?.item_id
       if (pendingFile && targetId) {
         const ok = await uploadImage(targetId, pendingFile)
         if (!ok) {

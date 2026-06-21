@@ -1,55 +1,42 @@
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
-import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
+import type { RowDataPacket } from 'mysql2/promise'
 
-// ============================================================
-// [id]/route.ts — 單筆操作（查詢、修改、軟刪除、上下架切換）
-// 對應：GET    /api/menu/:id
-//       PUT    /api/menu/:id
-//       PATCH  /api/menu/:id  — 切換 is_active
-//       DELETE /api/menu/:id  — 軟刪除（is_active=0）
-// ============================================================
-
-interface MenuItem {
-  item_id: number
-  name: string
-  category: string
-  price: number
-  emoji: string
-  tag: string
-  sub: string
-  option: string
-  description: string
-  is_active: number
-  image_url: string
+interface MenuItemRow extends RowDataPacket {
+  餐點編號: number
+  餐點名稱: string
+  餐點分類: string
+  餐點價格: number
+  圖示: string
+  分類標籤: string
+  餐點描述: string
+  上下架狀態: number
+  圖片網址: string
+  客製化屬性: string
 }
 
-interface UpdateMenuBody {
-  name?: string
-  category?: string
-  price?: number
-  emoji?: string
-  tag?: string
-  sub?: string
-  option?: string
-  description?: string
-  is_active?: number
-  image_url?: string
+function parseAddons(raw: string | null): Array<{ id: string; label: string; price: number }> {
+  try {
+    const p = JSON.parse(raw ?? '[]')
+    return Array.isArray(p) ? p : []
+  } catch { return [] }
 }
 
-interface PatchBody {
-  is_active?: number
+function toResponse(r: MenuItemRow) {
+  return {
+    item_id: r.餐點編號,
+    name: r.餐點名稱,
+    category: r.餐點分類,
+    price: r.餐點價格,
+    emoji: r.圖示,
+    tag: r.分類標籤,
+    description: r.餐點描述,
+    active: r.上下架狀態,
+    image_url: r.圖片網址,
+    addons: parseAddons(r.客製化屬性),
+  }
 }
 
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
-}
-
-// ============================================================
-// GET /api/menu/:id — 查詢單一品項
-// ============================================================
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
@@ -57,36 +44,24 @@ export async function GET(
   try {
     const pool = getPool()
     const id = parseInt(params.id, 10)
-
     if (isNaN(id)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的品項 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的品項 ID' }, { status: 400 })
     }
 
-    const item = (await pool.execute<RowDataPacket[]>(`SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0] as MenuItem | undefined
-
-    if (!item) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到品項' },
-        { status: 404 }
-      )
+    const [rows] = await pool.execute<MenuItemRow[]>(
+      'SELECT `餐點編號`,`餐點名稱`,`餐點分類`,`餐點價格`,`圖示`,`分類標籤`,`餐點描述`,`上下架狀態`,`圖片網址`,`客製化屬性` FROM `餐點` WHERE `餐點編號` = ?',
+      [id]
+    )
+    if (rows.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到品項' }, { status: 404 })
     }
-
-    return NextResponse.json<ApiResponse<MenuItem>>({ success: true, data: item })
+    return NextResponse.json({ success: true, data: toResponse(rows[0]) })
   } catch (err) {
     console.error('[GET /api/menu/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// ============================================================
-// PUT /api/menu/:id — 修改品項
-// ============================================================
 export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
@@ -94,63 +69,48 @@ export async function PUT(
   try {
     const pool = getPool()
     const id = parseInt(params.id, 10)
-
     if (isNaN(id)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的品項 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的品項 ID' }, { status: 400 })
     }
 
-    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
-
-    if (!existing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到品項' },
-        { status: 404 }
-      )
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT `餐點編號` FROM `餐點` WHERE `餐點編號` = ?', [id]
+    )
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到品項' }, { status: 404 })
     }
 
-    const body: UpdateMenuBody = await req.json()
+    const body = await req.json()
+    const fieldMap: Record<string, string> = {
+      '餐點名稱': '餐點名稱', '餐點分類': '餐點分類', '餐點價格': '餐點價格',
+      '圖示': '圖示', '分類標籤': '分類標籤', '餐點描述': '餐點描述',
+      '上下架狀態': '上下架狀態', '圖片網址': '圖片網址', '客製化屬性': '客製化屬性',
+    }
 
-    const fields: string[] = []
+    const sets: string[] = []
     const values: (string | number)[] = []
 
-    if (body.name !== undefined)        { fields.push('name = ?');        values.push(body.name) }
-    if (body.category !== undefined)    { fields.push('category = ?');    values.push(body.category) }
-    if (body.price !== undefined)       { fields.push('price = ?');       values.push(body.price) }
-    if (body.emoji !== undefined)       { fields.push('emoji = ?');       values.push(body.emoji) }
-    if (body.tag !== undefined)         { fields.push('tag = ?');         values.push(body.tag) }
-    if (body.sub !== undefined)         { fields.push('sub = ?');         values.push(body.sub) }
-    if (body.option !== undefined)      { fields.push('option = ?');      values.push(body.option) }
-    if (body.description !== undefined) { fields.push('description = ?'); values.push(body.description) }
-    if (body.is_active !== undefined)   { fields.push('is_active = ?');   values.push(body.is_active) }
-    if (body.image_url !== undefined)   { fields.push('image_url = ?');   values.push(body.image_url) }
+    for (const [bodyKey, colName] of Object.entries(fieldMap)) {
+      if (body[bodyKey] !== undefined) {
+        const val = bodyKey === '客製化屬性' ? JSON.stringify(body[bodyKey]) : body[bodyKey]
+        sets.push(`\`${colName}\` = ?`)
+        values.push(val)
+      }
+    }
 
-    if (fields.length === 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '沒有要更新的欄位' },
-        { status: 400 }
-      )
+    if (sets.length === 0) {
+      return NextResponse.json({ success: false, error: '沒有要更新的欄位' }, { status: 400 })
     }
 
     values.push(id)
-    await pool.execute(`UPDATE 餐點 SET ${fields.join(', ')} WHERE 餐點編號 = ?`)
-
+    await pool.execute(`UPDATE \`餐點\` SET ${sets.join(', ')} WHERE \`餐點編號\` = ?`, values)
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[PUT /api/menu/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// ============================================================
-// PATCH /api/menu/:id — 切換上下架狀態
-// body: { is_active: 0 | 1 }
-// ============================================================
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
@@ -158,45 +118,24 @@ export async function PATCH(
   try {
     const pool = getPool()
     const id = parseInt(params.id, 10)
-
     if (isNaN(id)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的品項 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的品項 ID' }, { status: 400 })
     }
 
-    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
-
-    if (!existing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到品項' },
-        { status: 404 }
-      )
+    const body = await req.json()
+    const active = body['上下架狀態'] ?? body.is_active
+    if (active !== 0 && active !== 1) {
+      return NextResponse.json({ success: false, error: '上下架狀態 必須為 0 或 1' }, { status: 400 })
     }
 
-    const body: PatchBody = await req.json()
-    if (body.is_active !== 0 && body.is_active !== 1) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'is_active 必須為 0 或 1' },
-        { status: 400 }
-      )
-    }
-
-    await pool.execute(`UPDATE 餐點 SET 上下架狀態 = ? WHERE 餐點編號 = ?`, [body.is_active, id])
+    await pool.execute('UPDATE `餐點` SET `上下架狀態` = ? WHERE `餐點編號` = ?', [active, id])
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[PATCH /api/menu/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// ============================================================
-// DELETE /api/menu/:id — 軟刪除（is_active=0）
-// ============================================================
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
@@ -204,31 +143,14 @@ export async function DELETE(
   try {
     const pool = getPool()
     const id = parseInt(params.id, 10)
-
     if (isNaN(id)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的品項 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的品項 ID' }, { status: 400 })
     }
 
-    const existing = (await pool.execute<RowDataPacket[]>(`SELECT item_id FROM 餐點 WHERE 餐點編號 = ?`, [id]))[0][0]
-
-    if (!existing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到品項' },
-        { status: 404 }
-      )
-    }
-
-    await pool.execute(`UPDATE 餐點 SET is_active = 0 WHERE 餐點編號 = ?`, [id])
-
+    await pool.execute('UPDATE `餐點` SET `上下架狀態` = 0 WHERE `餐點編號` = ?', [id])
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/menu/:id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
