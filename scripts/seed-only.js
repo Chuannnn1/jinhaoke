@@ -1,27 +1,40 @@
-// scripts/seed-only.js
-// 只跑 seed（不建表、不 migrate）。當你已經有 DB 但想補預設品項時用。
+// scripts/seed-only.js — MySQL version
+// 只跑 seed（不建表）。當你已經有 DB 但想補預設品項時用。
 //
 // 使用：node scripts/seed-only.js
-// 注意：dev server 要先停。
-
 const path = require('path')
 const fs = require('fs')
-const Database = require('better-sqlite3')
+const mysql = require('mysql2/promise')
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'jinhaoke.db')
-
-if (!fs.existsSync(DB_PATH)) {
-  console.error('❌ 找不到 DB：', DB_PATH)
-  console.error('   請先跑 `npm run db:init` 建表')
-  process.exit(1)
+// Load .env.local manually
+const envPath = path.join(__dirname, '..', '.env.local')
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2]
+  }
 }
 
-const db = new Database(DB_PATH)
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
+async function main() {
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306', 10),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'jinhaoke',
+    charset: 'utf8mb4',
+  })
 
-const { seedAll } = require('./seed-data')
-seedAll(db)
+  console.log('[seed-only] Connected to MySQL')
 
-console.log('✅ seed 完成')
-db.close()
+  const { seedAll } = require('./seed-data')
+  await seedAll(conn)
+
+  await conn.end()
+  console.log('[seed-only] Done')
+}
+
+main().catch(err => {
+  console.error('[seed-only] Fatal:', err)
+  process.exit(1)
+})

@@ -1,23 +1,12 @@
 // lib/auth.ts — 後台單一密碼登入機制
-//
-// 設計：
-//   · 密碼用 scrypt 雜湊（node:crypto 內建，無第三方相依）
-//   · 登入成功 → 產生 32-byte 隨機 token → 寫 admin_session → 種 httpOnly cookie 30 天
-//   · API 端點用 requireAdmin() 檢查 cookie token 是否有效（DB lookup）
-//   · 登出 = DELETE 該 token；清空整張表 = 強制所有 device 重新登入
-//
-// 部署：在 .env.local 設 ADMIN_PASSWORD_HASH（用 scripts/set-admin-password.js 產）
 import { NextResponse } from 'next/server'
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
-import { getDb } from './db'
+import { getPool } from './db'
+import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
 export const COOKIE_NAME = 'jinhaoke_admin_session'
 export const SESSION_DAYS = 60
 
-// ── 密碼雜湊 / 驗證 ──
-//   stored 格式: scrypt:<salt-hex>:<hash-hex>
-//   參數固定：N=16384, r=8, p=1, keyLen=64
-//   分隔符用 ':' 而不是 '$'，避免 .env 檔被 dotenv-expand 誤解
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex')
   const hash = scryptSync(password, salt, 64).toString('hex')
@@ -39,81 +28,86 @@ export function verifyPassword(password: string, stored: string | undefined): bo
   }
 }
 
-// ── Session 管理 ──
-export function createSession(userAgent?: string): {
+export async function createSession(userAgent?: string): Promise<{
   token: string
   expiresAt: Date
-} {
+}> {
+  const pool = getPool()
   const token = randomBytes(32).toString('hex')
   const now = new Date()
   const expiresAt = new Date(now.getTime() + SESSION_DAYS * 86400 * 1000)
-  getDb().prepare(`
-    INSERT INTO admin_session (token, created_at, expires_at, last_seen, user_agent)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(token, now.toISOString(), expiresAt.toISOString(), now.toISOString(), userAgent?.slice(0, 200) ?? null)
+  await pool.execute(
+    `INSERT INTO \`管理員登入\` (\`登入令牌\`, \`建立時間\`, \`過期時間\`, \`最後活動\`, \`裝置資訊\`)
+     VALUES (?, ?, ?, ?, ?)`,
+    [token, now.toISOString(), expiresAt.toISOString(), now.toISOString(), userAgent?.slice(0, 200) ?? null]
+  )
   return { token, expiresAt }
 }
 
-export function isValidSession(token: string | undefined | null): boolean {
+export async function isValidSession(token: string | undefined | null): Promise<boolean> {
   if (!token || typeof token !== 'string' || token.length !== 64) return false
-  const row = getDb()
-    .prepare('SELECT expires_at FROM admin_session WHERE token = ?')
-    .get(token) as { expires_at: string } | undefined
+  const pool = getPool()
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT `過期時間` FROM `管理員登入` WHERE `登入令牌` = ?',
+    [token]
+  )
+  const row = rows[0] as { 過期時間: string } | undefined
   if (!row) return false
-  if (Date.parse(row.expires_at) < Date.now()) {
-    // 順手清掉過期
-    getDb().prepare('DELETE FROM admin_session WHERE token = ?').run(token)
+  if (Date.parse(row.過期時間) < Date.now()) {
+    await pool.execute('DELETE FROM `管理員登入` WHERE `登入令牌` = ?', [token])
     return false
   }
-  // 更新 last_seen（不阻塞）
-  getDb()
-    .prepare('UPDATE admin_session SET last_seen = ? WHERE token = ?')
-    .run(new Date().toISOString(), token)
+  await pool.execute(
+    'UPDATE `管理員登入` SET `最後活動` = ? WHERE `登入令牌` = ?',
+    [new Date().toISOString(), token]
+  )
   return true
 }
 
-export function deleteSession(token: string): void {
-  getDb().prepare('DELETE FROM admin_session WHERE token = ?').run(token)
+export async function deleteSession(token: string): Promise<void> {
+  const pool = getPool()
+  await pool.execute('DELETE FROM `管理員登入` WHERE `登入令牌` = ?', [token])
 }
 
-export function cleanExpiredSessions(): number {
-  const r = getDb()
-    .prepare('DELETE FROM admin_session WHERE expires_at < ?')
-    .run(new Date().toISOString())
-  return r.changes
+export async function cleanExpiredSessions(): Promise<number> {
+  const pool = getPool()
+  const [result] = await pool.execute<ResultSetHeader>(
+    'DELETE FROM `管理員登入` WHERE `過期時間` < ?',
+    [new Date().toISOString()]
+  )
+  return result.affectedRows
 }
 
-// ── 設定值：通用 key/value（目前只用 'admin_password_hash'）──
-export function getAdminSetting(key: string): string | null {
-  const row = getDb()
-    .prepare('SELECT value FROM admin_setting WHERE key = ?')
-    .get(key) as { value: string } | undefined
-  return row?.value ?? null
+export async function getAdminSetting(key: string): Promise<string | null> {
+  const pool = getPool()
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT `設定值` FROM `管理員設定` WHERE `設定鍵` = ?',
+    [key]
+  )
+  const row = rows[0] as { 設定值: string } | undefined
+  return row?.設定值 ?? null
 }
 
-export function setAdminSetting(key: string, value: string): void {
-  getDb().prepare(`
-    INSERT INTO admin_setting (key, value, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-  `).run(key, value, new Date().toISOString())
+export async function setAdminSetting(key: string, value: string): Promise<void> {
+  const pool = getPool()
+  await pool.execute(
+    `INSERT INTO \`管理員設定\` (\`設定鍵\`, \`設定值\`, \`更新時間\`)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE \`設定值\` = VALUES(\`設定值\`), \`更新時間\` = VALUES(\`更新時間\`)`,
+    [key, value, new Date().toISOString()]
+  )
 }
 
-// ── 取得「目前生效」的密碼 hash ──
-// 優先讀 admin_setting DB（first-boot wizard / GUI 改密碼寫進去的）；
-// 沒有再 fallback 到 process.env.ADMIN_PASSWORD_HASH（給「全新部署、env 帶 initial seed」用）。
-// 一旦 DB 有值，env 就被忽略 → 改密碼從 GUI 改即可（不用碰 systemd EnvironmentFile）。
-export function getStoredHash(): string | undefined {
-  const fromDb = getAdminSetting('admin_password_hash')
+export async function getStoredHash(): Promise<string | undefined> {
+  const fromDb = await getAdminSetting('admin_password_hash')
   if (fromDb) return fromDb
   return process.env.ADMIN_PASSWORD_HASH || undefined
 }
 
-export function hasAdminPassword(): boolean {
-  return !!getStoredHash()
+export async function hasAdminPassword(): Promise<boolean> {
+  return !!(await getStoredHash())
 }
 
-// ── Helper：從 Request 取 cookie 值 ──
 export function getSessionTokenFromRequest(req: Request): string | null {
   const cookieHeader = req.headers.get('cookie') ?? ''
   for (const part of cookieHeader.split(';')) {
@@ -123,14 +117,9 @@ export function getSessionTokenFromRequest(req: Request): string | null {
   return null
 }
 
-// ── API 路由用的守衛 ──
-// 用法：
-//   const guard = requireAdmin(req)
-//   if (guard) return guard
-//   ...handler 繼續
-export function requireAdmin(req: Request): NextResponse | null {
+export async function requireAdmin(req: Request): Promise<NextResponse | null> {
   const token = getSessionTokenFromRequest(req)
-  if (!isValidSession(token)) {
+  if (!(await isValidSession(token))) {
     return NextResponse.json(
       { success: false, error: 'unauthorized' },
       { status: 401 }
@@ -139,18 +128,6 @@ export function requireAdmin(req: Request): NextResponse | null {
   return null
 }
 
-// ── 設定 cookie helper（POST /api/auth/login 用）──
-//
-// 是否加 Secure：
-//   1. COOKIE_INSECURE=1            → 強制不加（local dev / 顯式覆寫）
-//   2. COOKIE_FORCE_SECURE=1        → 強制加（明知前面有 TLS proxy 終止 https）
-//   3. 否則看 request 的 scheme：    X-Forwarded-Proto / URL.protocol，是 https 才加
-//
-// 設計原因：
-//   先前只看 NODE_ENV=production 就一律加 Secure。
-//   但 Tailnet IP（http://100.x.x.x:3100）部署也是 production，
-//   結果 cookie 被瀏覽器拒絕 → login 後跳 /admin 又被踢回 /admin/login → 看起來像「卡在登入中」。
-//   改成 per-request 判斷後，HTTP 部署能正常運作，HTTPS 部署也仍會收到 Secure。
 export function buildSessionCookie(token: string, expiresAt: Date, req?: Request): string {
   const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
   const parts = [
@@ -168,10 +145,8 @@ function shouldUseSecure(req?: Request): boolean {
   if (process.env.COOKIE_INSECURE === '1') return false
   if (process.env.COOKIE_FORCE_SECURE === '1') return true
   if (!req) return false
-  // 先看 reverse proxy 帶過來的 X-Forwarded-Proto
   const xfp = req.headers.get('x-forwarded-proto')
   if (xfp) return xfp.split(',')[0].trim().toLowerCase() === 'https'
-  // 沒 proxy 就直接看 URL（直連時 req.url 是完整 URL）
   try {
     return new URL(req.url).protocol === 'https:'
   } catch {

@@ -1,81 +1,61 @@
-// app/api/purchase/[po_id]/route.ts
-// ============================================================
-//   GET   /api/purchase/:po_id    單張採購單（含明細）
-//   PATCH /api/purchase/:po_id    改狀態 / upsert 明細
-// ============================================================
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket, Pool } from 'mysql2/promise'
 
 interface PurchaseOrder {
-  po_id: number
-  po_date: string
-  supplier_name: string
-  total_amount: number
-  status: string
-  items?: PurchaseOrderItem[]
+  採購單編號: number
+  採購單日期: string
+  供應商名稱: string
+  進貨食材總成本: number
+  採購單狀態: string
+  items?: POItem[]
   returns?: ReturnRecord[]
 }
 
-interface PurchaseOrderItem {
-  ingredient_name: string
-  order_qty: number
-  total_cost: number
-  returned_qty?: number  // 累計已退量（GET 才有）
+interface POItem {
+  食材名稱: string
+  數量: number
+  已退數量?: number
 }
 
 interface ReturnRecord {
-  return_id: number
-  ingredient_name: string
-  return_date: string
-  return_reason: string | null
-  return_qty: number
+  退貨單編號: number
+  食材名稱: string
+  退貨單日期: string
+  退貨原因: string | null
+  退貨數量: number
 }
 
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
-}
+const ALLOWED_STATUS = ['已下單', '已到貨', '已取消'] as const
 
-interface PatchBody {
-  status?: '已訂購' | '已驗貨' | '已退貨'
-  items?: Array<{
-    ingredient_name: string
-    order_qty: number
-    total_cost?: number
-  }>
-}
+async function loadOrder(pool: Pool, poId: number): Promise<PurchaseOrder | null> {
+  const [poRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT `採購單編號`, `採購單日期`, `供應商名稱`, `進貨食材總成本`, `採購單狀態` FROM `採購單` WHERE `採購單編號` = ?',
+    [poId]
+  )
+  if (poRows.length === 0) return null
+  const po = poRows[0] as unknown as PurchaseOrder
 
-const ALLOWED_STATUS = ['已訂購', '已驗貨', '已退貨'] as const
-
-function loadOrder(db: ReturnType<typeof getDb>, poId: number): PurchaseOrder | null {
-  const po = db
-    .prepare(
-      'SELECT po_id, po_date, supplier_name, total_amount, status FROM purchase_order WHERE po_id = ?'
-    )
-    .get(poId) as PurchaseOrder | undefined
-  if (!po) return null
-  const items = db
-    .prepare(
-      'SELECT ingredient_name, order_qty, total_cost FROM purchase_order_item WHERE po_id = ?'
-    )
-    .all(poId) as PurchaseOrderItem[]
-
-  // 補上累計已退量
-  const returnedSums = db
-    .prepare(
-      'SELECT ingredient_name, COALESCE(SUM(return_qty), 0) AS s FROM return_order WHERE po_id = ? GROUP BY ingredient_name'
-    )
-    .all(poId) as Array<{ ingredient_name: string; s: number }>
-  const byIng = new Map(returnedSums.map(r => [r.ingredient_name, Number(r.s) || 0]))
-  for (const it of items) it.returned_qty = byIng.get(it.ingredient_name) || 0
-
+  const [itemRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT `食材名稱`, `數量` FROM `採購單明細` WHERE `採購單編號` = ?', [poId]
+  )
+  const [returnedSums] = await pool.execute<RowDataPacket[]>(
+    'SELECT `食材名稱`, COALESCE(SUM(`退貨數量`), 0) AS s FROM `退貨單` WHERE `採購單編號` = ? GROUP BY `食材名稱`', [poId]
+  )
+  const byIng = new Map((returnedSums as Array<{ 食材名稱: string; s: number }>).map(r => [r.食材名稱, Number(r.s) || 0]))
+  const items: POItem[] = (itemRows as Array<{ 食材名稱: string; 數量: number }>).map(it => ({
+    食材名稱: it.食材名稱,
+    數量: it.數量,
+    已退數量: byIng.get(it.食材名稱) || 0,
+  }))
   po.items = items
-  po.returns = db
-    .prepare(
-      'SELECT return_id, ingredient_name, return_date, return_reason, return_qty FROM return_order WHERE po_id = ? ORDER BY return_date DESC, return_id DESC'
-    )
-    .all(poId) as ReturnRecord[]
+
+  const [returnRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT `退貨單編號`, `食材名稱`, `退貨單日期`, `退貨原因`, `退貨數量` FROM `退貨單` WHERE `採購單編號` = ? ORDER BY `退貨單日期` DESC, `退貨單編號` DESC',
+    [poId]
+  )
+  po.returns = returnRows as unknown as ReturnRecord[]
+
   return po
 }
 
@@ -87,172 +67,94 @@ export async function GET(
   { params }: { params: { po_id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const poId = parseInt(params.po_id, 10)
     if (isNaN(poId)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的採購單 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的採購單 ID' }, { status: 400 })
     }
-    const po = loadOrder(db, poId)
+    const po = await loadOrder(pool, poId)
     if (!po) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該採購單' },
-        { status: 404 }
-      )
+      return NextResponse.json({ success: false, error: '找不到該採購單' }, { status: 404 })
     }
-    return NextResponse.json<ApiResponse<PurchaseOrder>>(
-      { success: true, data: po },
-      { status: 200 }
-    )
+    return NextResponse.json({ success: true, data: po })
   } catch (err) {
     console.error('[GET /api/purchase/:po_id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
 // ============================================================
-// PATCH /api/purchase/:po_id — 改狀態 / 更新明細
+// PATCH /api/purchase/:po_id — 改狀態（含自動入庫）
 // ============================================================
+interface PatchBody {
+  status?: '已下單' | '已到貨' | '已取消'
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: { po_id: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const poId = parseInt(params.po_id, 10)
     if (isNaN(poId)) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無效的採購單 ID' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無效的採購單 ID' }, { status: 400 })
     }
 
-    const exists = db
-      .prepare('SELECT po_id FROM purchase_order WHERE po_id = ?')
-      .get(poId)
-    if (!exists) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該採購單' },
-        { status: 404 }
-      )
+    const [prevRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `採購單編號`, `採購單狀態` FROM `採購單` WHERE `採購單編號` = ?', [poId]
+    )
+    if (prevRows.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到該採購單' }, { status: 404 })
     }
+    const prevStatus = (prevRows[0] as { 採購單狀態: string }).採購單狀態
 
     const body: PatchBody = await req.json()
 
-    // 預先驗證
     if (body.status !== undefined) {
       if (!ALLOWED_STATUS.includes(body.status)) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: `非法狀態：${body.status}` },
-          { status: 400 }
-        )
-      }
-    }
-    if (body.items !== undefined) {
-      for (const item of body.items) {
-        if (!item.ingredient_name?.trim()) {
-          return NextResponse.json<ApiResponse>(
-            { success: false, error: 'ingredient_name 必填' },
-            { status: 400 }
-          )
-        }
-        const ing = db
-          .prepare('SELECT name FROM ingredient WHERE name = ?')
-          .get(item.ingredient_name.trim())
-        if (!ing) {
-          return NextResponse.json<ApiResponse>(
-            { success: false, error: `找不到食材：${item.ingredient_name}` },
-            { status: 400 }
-          )
-        }
-        if (typeof item.order_qty !== 'number' || item.order_qty <= 0) {
-          return NextResponse.json<ApiResponse>(
-            { success: false, error: `${item.ingredient_name} 的 order_qty 需為正數` },
-            { status: 400 }
-          )
-        }
+        return NextResponse.json({ success: false, error: `非法狀態：${body.status}` }, { status: 400 })
       }
     }
 
-    // 抓舊狀態，判斷是否「進入已驗貨」(用來補庫存)
-    const prevRow = db
-      .prepare('SELECT status FROM purchase_order WHERE po_id = ?')
-      .get(poId) as { status: string }
-    const prevStatus = prevRow.status
-    const enteringReceived =
-      body.status === '已驗貨' && prevStatus !== '已驗貨'
+    const enteringReceived = body.status === '已到貨' && prevStatus !== '已到貨'
 
-    db.transaction(() => {
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+
       if (body.status !== undefined) {
-        db.prepare('UPDATE purchase_order SET status = ? WHERE po_id = ?')
-          .run(body.status, poId)
-      }
-
-      if (body.items !== undefined && body.items.length > 0) {
-        // upsert: 同食材就 UPDATE，否則 INSERT
-        const upsert = db.prepare(`
-          INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, total_cost)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(po_id, ingredient_name) DO UPDATE SET
-            order_qty  = excluded.order_qty,
-            total_cost = excluded.total_cost
-        `)
-        for (const item of body.items) {
-          upsert.run(
-            poId,
-            item.ingredient_name.trim(),
-            item.order_qty,
-            Number(item.total_cost) || 0
-          )
-        }
-
-        // 重新彙總 total_amount
-        const sum = db
-          .prepare(
-            'SELECT COALESCE(SUM(total_cost), 0) AS s FROM purchase_order_item WHERE po_id = ?'
-          )
-          .get(poId) as { s: number }
-        db.prepare('UPDATE purchase_order SET total_amount = ? WHERE po_id = ?')
-          .run(sum.s, poId)
-      }
-
-      // 「進入已驗貨」→ 把這張 PO 全部明細 order_qty 加回 ingredient.stock_qty
-      // 為避免重複入帳，只在 prevStatus !== '已驗貨' && 新狀態 === '已驗貨' 時觸發
-      if (enteringReceived) {
-        const items = db
-          .prepare(
-            'SELECT ingredient_name, order_qty FROM purchase_order_item WHERE po_id = ?'
-          )
-          .all(poId) as Array<{ ingredient_name: string; order_qty: number }>
-        const addStock = db.prepare(
-          'UPDATE ingredient SET stock_qty = stock_qty + ? WHERE name = ?'
+        await conn.execute(
+          'UPDATE `採購單` SET `採購單狀態` = ? WHERE `採購單編號` = ?',
+          [body.status, poId]
         )
-        for (const it of items) {
-          const r = addStock.run(it.order_qty, it.ingredient_name)
-          if (r.changes === 0) {
-            console.warn(
-              `[purchase 已驗貨] 找不到食材 "${it.ingredient_name}"，跳過入庫`
-            )
-          }
+      }
+
+      // 進入「已到貨」→ 將明細數量加回食材庫存
+      if (enteringReceived) {
+        const [items] = await conn.execute<RowDataPacket[]>(
+          'SELECT `食材名稱`, `數量` FROM `採購單明細` WHERE `採購單編號` = ?', [poId]
+        )
+        for (const it of items as Array<{ 食材名稱: string; 數量: number }>) {
+          await conn.execute(
+            'UPDATE `食材` SET `庫存數量` = `庫存數量` + ? WHERE `食材名稱` = ?',
+            [it.數量, it.食材名稱]
+          )
         }
       }
-    })()
 
-    const updated = loadOrder(db, poId)
-    return NextResponse.json<ApiResponse<PurchaseOrder>>(
-      { success: true, data: updated! },
-      { status: 200 }
-    )
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
+    }
+
+    const updated = await loadOrder(pool, poId)
+    return NextResponse.json({ success: true, data: updated })
   } catch (err) {
     console.error('[PATCH /api/purchase/:po_id]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }

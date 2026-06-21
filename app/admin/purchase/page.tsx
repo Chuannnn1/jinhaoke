@@ -2,74 +2,56 @@
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-// ============================================================
-// 採購管理 /admin/purchase
-//   - 列表所有 PO（po_id / po_date / supplier_name / status / total_amount）
-//   - 點開看明細
-//   - 「+ 新增採購單」 modal：供應商 + 多列明細（食材下拉）
-//   - 既有 PO 可改狀態
-// ============================================================
-
 interface PurchaseOrder {
-  po_id: number
-  po_date: string
-  supplier_name: string
-  total_amount: number
-  status: string
+  採購單編號: number
+  採購單日期: string
+  供應商名稱: string
+  進貨食材總成本: number
+  採購單狀態: string
   items?: PurchaseItem[]
   returns?: ReturnRecord[]
 }
 
 interface PurchaseItem {
-  ingredient_name: string
-  order_qty: number
-  total_cost: number
-  returned_qty?: number  // 累計已退量
+  食材名稱: string
+  數量: number
+  已退數量?: number
 }
 
 interface ReturnRecord {
-  return_id: number
-  ingredient_name: string
-  return_date: string
-  return_reason: string | null
-  return_qty: number
+  退貨單編號: number
+  食材名稱: string
+  退貨單日期: string
+  退貨原因: string | null
+  退貨數量: number
 }
 
 interface Supplier {
-  name: string
-  phone?: string | null
-  owner_name?: string | null
-  category: string
+  供應商名稱: string
+  供應商電話: string | null
 }
 
 interface Ingredient {
-  name: string
-  stock_unit: string
-  order_unit: string
-  qty_per_order_unit: number
-  supplier_name: string | null
-  category: string
+  食材名稱: string
+  庫存單位: string
+  供應商名稱: string | null
 }
 
-const PURCHASE_CATEGORIES = ['全部', '豬', '雞', '牛', '魚', '其他'] as const
-
-const STATUS_OPTIONS = ['已訂購', '已驗貨', '已退貨'] as const
-type StatusType = (typeof STATUS_OPTIONS)[number]
+const STATUS_OPTIONS = ['已下單', '已到貨', '已取消'] as const
 
 const STATUS_COLORS: Record<string, string> = {
-  '已訂購':  'bg-blue-100 text-blue-700',
-  '已驗貨':  'bg-green-100 text-green-700',
-  '已退貨':  'bg-orange-100 text-orange-700',
+  '已下單': 'bg-blue-100 text-blue-700',
+  '已到貨': 'bg-green-100 text-green-700',
+  '已取消': 'bg-orange-100 text-orange-700',
 }
 
-// 計算 PO 是否「還能退貨」
 function getReturnableInfo(po: PurchaseOrder) {
   const items = po.items ?? []
   let totalOrder = 0
   let totalReturned = 0
   for (const it of items) {
-    totalOrder += it.order_qty
-    totalReturned += it.returned_qty || 0
+    totalOrder += it.數量
+    totalReturned += it.已退數量 || 0
   }
   return {
     totalOrder,
@@ -108,9 +90,6 @@ function PurchasePageInner() {
   const [expandedPo, setExpandedPo] = useState<number | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [returnTarget, setReturnTarget] = useState<PurchaseOrder | null>(null)
-  // URL prefill：庫存頁面點「+ 採購單」會帶 category 進來
-  //   /admin/purchase?open=1&category=雞&ingredient=雞腿
-  const [prefillCategory, setPrefillCategory] = useState<string | null>(null)
   const [prefillIngredient, setPrefillIngredient] = useState<string | null>(null)
 
   const fetchOrders = useCallback(async () => {
@@ -142,13 +121,10 @@ function PurchasePageInner() {
     } catch { /* ignore */ }
   }, [])
 
-  // 解析 URL prefill 一次（之後 user 操作 modal 自己持有 state）
   useEffect(() => {
     if (!searchParams) return
-    const cat = searchParams.get('category')
     const ing = searchParams.get('ingredient')
     const open = searchParams.get('open')
-    if (cat && ['豬', '雞', '牛', '魚', '其他'].includes(cat)) setPrefillCategory(cat)
     if (ing) setPrefillIngredient(ing)
     if (open === '1') setModalOpen(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -161,12 +137,12 @@ function PurchasePageInner() {
   }, [fetchOrders, fetchSuppliers, fetchIngredients])
 
   const handleReceive = async (poId: number) => {
-    if (!window.confirm(`確認 PO #${poId} 已驗貨入庫？此動作將自動將訂購量加進庫存。`)) return
+    if (!window.confirm(`確認採購單 #${poId} 已到貨入庫？此動作將自動將訂購量加進庫存。`)) return
     try {
       const res = await fetch(`/api/purchase/${poId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: '已驗貨' }),
+        body: JSON.stringify({ status: '已到貨' }),
       })
       const data = await res.json()
       if (data.success) {
@@ -181,8 +157,8 @@ function PurchasePageInner() {
 
   const summary = useMemo(() => {
     const total = orders.length
-    const open = orders.filter(o => o.status === '已訂購').length
-    const done = orders.filter(o => o.status === '已驗貨').length
+    const open = orders.filter(o => o.採購單狀態 === '已下單').length
+    const done = orders.filter(o => o.採購單狀態 === '已到貨').length
     return { total, open, done }
   }, [orders])
 
@@ -201,18 +177,17 @@ function PurchasePageInner() {
       </header>
 
       <main className="flex-1 overflow-auto p-6 bg-gray-50">
-        {/* 摘要卡片 */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl shadow-sm px-5 py-4">
             <span className="text-xs text-ink/40 uppercase tracking-wide">採購單總數</span>
             <p className="text-2xl font-bold text-ink mt-1">{summary.total}</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-            <span className="text-xs text-blue-600 uppercase tracking-wide">待驗貨</span>
+            <span className="text-xs text-blue-600 uppercase tracking-wide">待到貨</span>
             <p className="text-2xl font-bold text-blue-600 mt-1">{summary.open}</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm px-5 py-4">
-            <span className="text-xs text-green-600 uppercase tracking-wide">已驗貨</span>
+            <span className="text-xs text-green-600 uppercase tracking-wide">已到貨</span>
             <p className="text-2xl font-bold text-green-600 mt-1">{summary.done}</p>
           </div>
         </div>
@@ -231,23 +206,23 @@ function PurchasePageInner() {
             <a href="/admin/inventory" className="text-clay hover:underline ml-1">
               庫存管理
             </a>
-            執行「自動補貨建議」
+            執行「低庫存補貨」
           </div>
         ) : (
           <div className="space-y-3">
             {orders.map(po => (
-              <div key={po.po_id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div key={po.採購單編號} className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                   <div className="flex items-center gap-5">
                     <div>
                       <p className="text-[11px] text-ink/40 uppercase tracking-wide font-mono">
-                        PO #{po.po_id}
+                        PO #{po.採購單編號}
                       </p>
-                      <p className="text-sm font-semibold text-ink">{po.supplier_name}</p>
+                      <p className="text-sm font-semibold text-ink">{po.供應商名稱}</p>
                     </div>
-                    <div className="text-xs text-ink/50 font-mono">{po.po_date}</div>
+                    <div className="text-xs text-ink/50 font-mono">{po.採購單日期}</div>
                     <div className="text-sm font-mono text-clay">
-                      NT$ {formatMoney(po.total_amount)}
+                      NT$ {formatMoney(po.進貨食材總成本)}
                     </div>
                     {(() => {
                       const info = getReturnableInfo(po)
@@ -255,12 +230,12 @@ function PurchasePageInner() {
                       return (
                         <span
                           className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            STATUS_COLORS[po.status] ?? 'bg-gray-100'
+                            STATUS_COLORS[po.採購單狀態] ?? 'bg-gray-100'
                           }`}
                           title={hasReturns ? `已退 ${formatQty(info.totalReturned)} / 訂購 ${formatQty(info.totalOrder)}` : undefined}
                         >
-                          {po.status}
-                          {hasReturns && po.status === '已退貨' && (
+                          {po.採購單狀態}
+                          {hasReturns && po.採購單狀態 === '已取消' && (
                             <span className="ml-1 font-mono">
                               ({formatQty(info.totalReturned)}/{formatQty(info.totalOrder)})
                             </span>
@@ -270,15 +245,15 @@ function PurchasePageInner() {
                     })()}
                   </div>
                   <div className="flex items-center gap-2">
-                    {po.status === '已訂購' && (
+                    {po.採購單狀態 === '已下單' && (
                       <button
-                        onClick={() => handleReceive(po.po_id)}
+                        onClick={() => handleReceive(po.採購單編號)}
                         className="px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs hover:bg-green-600 transition-colors"
                       >
                         驗貨入庫
                       </button>
                     )}
-                    {(po.status === '已驗貨' || po.status === '已退貨') && !getReturnableInfo(po).fullyReturned && (
+                    {(po.採購單狀態 === '已到貨' || po.採購單狀態 === '已取消') && !getReturnableInfo(po).fullyReturned && (
                       <button
                         onClick={() => setReturnTarget(po)}
                         className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600 transition-colors"
@@ -287,29 +262,19 @@ function PurchasePageInner() {
                         退貨
                       </button>
                     )}
-                    <a
-                      href={`/admin/purchase/${po.po_id}/print`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 border border-clay/30 text-clay rounded-lg text-xs hover:bg-clay/5 transition-colors"
-                      title="開啟列印版採購單"
-                    >
-                      🖨 列印
-                    </a>
                     <button
                       onClick={() =>
-                        setExpandedPo(expandedPo === po.po_id ? null : po.po_id)
+                        setExpandedPo(expandedPo === po.採購單編號 ? null : po.採購單編號)
                       }
                       className="px-3 py-1.5 border border-border text-ink/60 rounded-lg text-xs hover:bg-gray-50 transition-colors"
                     >
-                      {expandedPo === po.po_id ? '收起' : '查看明細'}
+                      {expandedPo === po.採購單編號 ? '收起' : '查看明細'}
                     </button>
                   </div>
                 </div>
 
-                {expandedPo === po.po_id && (
+                {expandedPo === po.採購單編號 && (
                   <div className="px-5 py-3 bg-gray-50/50 space-y-4">
-                    {/* 訂購明細 */}
                     {po.items && po.items.length > 0 ? (
                       <div>
                         <p className="text-[11px] text-ink/40 uppercase tracking-wide mb-1">訂購明細</p>
@@ -320,25 +285,21 @@ function PurchasePageInner() {
                               <th className="pb-1 text-right">訂購量</th>
                               <th className="pb-1 text-right">已退</th>
                               <th className="pb-1 text-right">剩餘</th>
-                              <th className="pb-1 text-right">成本</th>
                             </tr>
                           </thead>
                           <tbody>
                             {po.items.map(item => {
-                              const ret = item.returned_qty || 0
-                              const remain = item.order_qty - ret
+                              const ret = item.已退數量 || 0
+                              const remain = item.數量 - ret
                               return (
-                                <tr key={item.ingredient_name} className="border-t border-gray-200">
-                                  <td className="py-1.5 text-ink">{item.ingredient_name}</td>
-                                  <td className="py-1.5 text-right font-mono">{formatQty(item.order_qty)}</td>
+                                <tr key={item.食材名稱} className="border-t border-gray-200">
+                                  <td className="py-1.5 text-ink">{item.食材名稱}</td>
+                                  <td className="py-1.5 text-right font-mono">{formatQty(item.數量)}</td>
                                   <td className={`py-1.5 text-right font-mono ${ret > 0 ? 'text-orange-600' : 'text-ink/30'}`}>
                                     {ret > 0 ? formatQty(ret) : '—'}
                                   </td>
                                   <td className={`py-1.5 text-right font-mono ${remain <= 0 ? 'text-ink/30 line-through' : ''}`}>
                                     {formatQty(remain)}
-                                  </td>
-                                  <td className="py-1.5 text-right font-mono text-clay">
-                                    NT$ {formatMoney(item.total_cost)}
                                   </td>
                                 </tr>
                               )
@@ -350,7 +311,6 @@ function PurchasePageInner() {
                       <p className="text-xs text-ink/30">（此單無明細）</p>
                     )}
 
-                    {/* 退貨歷史 */}
                     {po.returns && po.returns.length > 0 && (
                       <div>
                         <p className="text-[11px] text-orange-600 uppercase tracking-wide mb-1">退貨歷史</p>
@@ -365,13 +325,13 @@ function PurchasePageInner() {
                           </thead>
                           <tbody>
                             {po.returns.map(r => (
-                              <tr key={r.return_id} className="border-t border-gray-200">
-                                <td className="py-1.5 font-mono text-ink/60">{r.return_date}</td>
-                                <td className="py-1.5 text-ink">{r.ingredient_name}</td>
+                              <tr key={r.退貨單編號} className="border-t border-gray-200">
+                                <td className="py-1.5 font-mono text-ink/60">{r.退貨單日期}</td>
+                                <td className="py-1.5 text-ink">{r.食材名稱}</td>
                                 <td className="py-1.5 text-right font-mono text-orange-600">
-                                  {formatQty(r.return_qty)}
+                                  {formatQty(r.退貨數量)}
                                 </td>
-                                <td className="py-1.5 text-ink/60">{r.return_reason || '—'}</td>
+                                <td className="py-1.5 text-ink/60">{r.退貨原因 || '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -390,16 +350,13 @@ function PurchasePageInner() {
         <CreatePOModal
           suppliers={suppliers}
           ingredients={ingredients}
-          initialCategory={prefillCategory}
           initialIngredient={prefillIngredient}
           onClose={() => {
             setModalOpen(false)
-            setPrefillCategory(null)
             setPrefillIngredient(null)
           }}
           onCreated={() => {
             setModalOpen(false)
-            setPrefillCategory(null)
             setPrefillIngredient(null)
             fetchOrders()
           }}
@@ -420,74 +377,42 @@ function PurchasePageInner() {
   )
 }
 
-// ============================================================
-// 新增採購單 Modal
-// ============================================================
 interface DraftItem {
   ingredient_name: string
   order_qty: string
-  total_cost: string
 }
 
 function CreatePOModal({
   suppliers,
   ingredients,
-  initialCategory,
   initialIngredient,
   onClose,
   onCreated,
 }: {
   suppliers: Supplier[]
   ingredients: Ingredient[]
-  initialCategory?: string | null
   initialIngredient?: string | null
   onClose: () => void
   onCreated: () => void
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const [poDate, setPoDate] = useState(today)
-  // category 第一段 select；'全部' 不過濾廠商
-  const [category, setCategory] = useState<string>(
-    initialCategory && ['豬', '雞', '牛', '魚', '其他'].includes(initialCategory)
-      ? initialCategory
-      : '全部'
-  )
   const [supplierName, setSupplierName] = useState('')
-  const [status, setStatus] = useState<StatusType>('已訂購')
   const [items, setItems] = useState<DraftItem[]>([
-    { ingredient_name: initialIngredient ?? '', order_qty: '', total_cost: '' },
+    { ingredient_name: initialIngredient ?? '', order_qty: '' },
   ])
   const [submitting, setSubmitting] = useState(false)
   const [errMsg, setErrMsg] = useState<string | null>(null)
 
-  // 第一段 select：分類 → filter supplier
-  const supplierOptions = useMemo(() => {
-    if (category === '全部') return suppliers
-    return suppliers.filter(s => s.category === category)
-  }, [suppliers, category])
-
-  // category 改變：清空 supplier 選擇（避免殘留不在 filter 內的廠商）
-  useEffect(() => {
-    if (supplierName && !supplierOptions.some(s => s.name === supplierName)) {
-      setSupplierName('')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category])
-
-  // 食材選單同時依 category + supplier 過濾。
-  //   - category != '全部' 時，只列同分類食材（+ category=其他 的兼容用「全部分類」呈現？）
-  //   - supplier 選了之後，再過濾到該 supplier 的食材（保留無 supplier 食材作為 fallback）
   const ingredientOptions = useMemo(() => {
-    let arr = ingredients
-    if (category !== '全部') arr = arr.filter(ing => ing.category === category)
     if (supplierName) {
-      arr = arr.filter(ing => ing.supplier_name === supplierName || !ing.supplier_name)
+      return ingredients.filter(ing => ing.供應商名稱 === supplierName || !ing.供應商名稱)
     }
-    return arr
-  }, [ingredients, category, supplierName])
+    return ingredients
+  }, [ingredients, supplierName])
 
   const addRow = () => {
-    setItems(prev => [...prev, { ingredient_name: '', order_qty: '', total_cost: '' }])
+    setItems(prev => [...prev, { ingredient_name: '', order_qty: '' }])
   }
 
   const removeRow = (idx: number) => {
@@ -510,7 +435,6 @@ function CreatePOModal({
       .map(i => ({
         ingredient_name: i.ingredient_name.trim(),
         order_qty: parseFloat(i.order_qty),
-        total_cost: i.total_cost.trim() === '' ? 0 : parseFloat(i.total_cost),
       }))
 
     if (validItems.length === 0) {
@@ -520,10 +444,6 @@ function CreatePOModal({
     for (const it of validItems) {
       if (!Number.isFinite(it.order_qty) || it.order_qty <= 0) {
         setErrMsg(`${it.ingredient_name} 的訂購量需為正數`)
-        return
-      }
-      if (!Number.isFinite(it.total_cost) || it.total_cost < 0) {
-        setErrMsg(`${it.ingredient_name} 的預估成本需為 >= 0`)
         return
       }
     }
@@ -536,7 +456,7 @@ function CreatePOModal({
         body: JSON.stringify({
           po_date: poDate,
           supplier_name: supplierName.trim(),
-          status,
+          status: '已下單',
           items: validItems,
         }),
       })
@@ -564,7 +484,7 @@ function CreatePOModal({
         </div>
 
         <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-ink/50 mb-1 block">採購日期</label>
               <input
@@ -576,21 +496,6 @@ function CreatePOModal({
             </div>
             <div>
               <label className="text-xs text-ink/50 mb-1 block">
-                分類
-                <span className="text-ink/30 ml-1 text-[10px]">先選分類再選廠商</span>
-              </label>
-              <select
-                value={category}
-                onChange={e => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
-              >
-                {PURCHASE_CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-ink/50 mb-1 block">
                 供應商 <span className="text-red-400">*</span>
               </label>
               <select
@@ -599,44 +504,12 @@ function CreatePOModal({
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
               >
                 <option value="">
-                  {supplierOptions.length === 0 ? '此分類尚無廠商' : '請選擇'}
+                  {suppliers.length === 0 ? '尚無供應商' : '請選擇'}
                 </option>
-                {supplierOptions.map(s => (
-                  <option key={s.name} value={s.name}>
-                    {s.name}{s.owner_name ? `（${s.owner_name}）` : ''}
+                {suppliers.map(s => (
+                  <option key={s.供應商名稱} value={s.供應商名稱}>
+                    {s.供應商名稱}
                   </option>
-                ))}
-              </select>
-              {supplierOptions.length === 0 && category !== '全部' && (
-                <p className="text-[11px] text-amber-600 mt-1">
-                  分類「{category}」目前沒掛廠商。
-                  <button
-                    type="button"
-                    onClick={() => setCategory('全部')}
-                    className="ml-1 underline hover:text-amber-700"
-                  >
-                    改顯示全部
-                  </button>
-                  <span className="text-ink/40 mx-1">或</span>
-                  <a
-                    href="/admin/inventory?tab=suppliers"
-                    target="_blank"
-                    className="underline hover:text-amber-700"
-                  >
-                    去供應商管理分類
-                  </a>
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs text-ink/50 mb-1 block">狀態</label>
-              <select
-                value={status}
-                onChange={e => setStatus(e.target.value as StatusType)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
-              >
-                {STATUS_OPTIONS.map(s => (
-                  <option key={s} value={s}>{s}</option>
                 ))}
               </select>
             </div>
@@ -655,7 +528,7 @@ function CreatePOModal({
 
             <div className="space-y-2">
               {items.map((item, idx) => {
-                const selected = ingredients.find(i => i.name === item.ingredient_name)
+                const selected = ingredients.find(i => i.食材名稱 === item.ingredient_name)
                 return (
                   <div key={idx} className="flex gap-2 items-center">
                     <select
@@ -665,9 +538,9 @@ function CreatePOModal({
                     >
                       <option value="">選擇食材</option>
                       {ingredientOptions.map(ing => (
-                        <option key={ing.name} value={ing.name}>
-                          {ing.name}
-                          {ing.supplier_name ? ` (${ing.supplier_name})` : ''}
+                        <option key={ing.食材名稱} value={ing.食材名稱}>
+                          {ing.食材名稱}
+                          {ing.供應商名稱 ? ` (${ing.供應商名稱})` : ''}
                         </option>
                       ))}
                     </select>
@@ -683,19 +556,10 @@ function CreatePOModal({
                       />
                       {selected && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink/30">
-                          {selected.stock_unit}
+                          {selected.庫存單位}
                         </span>
                       )}
                     </div>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="預估成本"
-                      value={item.total_cost}
-                      onChange={e => updateRow(idx, { total_cost: e.target.value })}
-                      className="w-28 px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-                    />
                     {items.length > 1 && (
                       <button
                         onClick={() => removeRow(idx)}
@@ -710,7 +574,7 @@ function CreatePOModal({
               })}
             </div>
             <p className="text-[11px] text-ink/30 mt-2">
-              訂購量以食材的庫存單位（片 / 隻 / kg 等）計；預估成本可留空，驗貨後再補。
+              訂購量以食材的庫存單位（片 / 隻 / kg 等）計。
             </p>
           </div>
 
@@ -736,14 +600,6 @@ function CreatePOModal({
   )
 }
 
-// ============================================================
-// 退貨 Modal（v2）
-//   - 三欄數量顯示：叫貨 / 已退 / 可退
-//   - 輸入框 max 動態用「可退量」，不會讓 user 填超出
-//   - 「全部退貨」快捷按鈕：把所有可退 row 勾起來 + 填滿
-//   - 可退 = 0 的 row 自動 disabled，不能勾選
-//   - 提交時逐筆 POST，API 會做最終 cumulative check
-// ============================================================
 function ReturnModal({
   po,
   onClose,
@@ -765,12 +621,12 @@ function ReturnModal({
 
   const [rows, setRows] = useState<Row[]>(() =>
     (po.items ?? []).map(it => {
-      const ret = it.returned_qty || 0
+      const ret = it.已退數量 || 0
       return {
-        ingredient_name: it.ingredient_name,
-        order_qty: it.order_qty,
+        ingredient_name: it.食材名稱,
+        order_qty: it.數量,
         returned_qty: ret,
-        remaining: Math.max(0, it.order_qty - ret),
+        remaining: Math.max(0, it.數量 - ret),
         checked: false,
         return_qty: '',
         reason: '',
@@ -784,7 +640,6 @@ function ReturnModal({
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
   }
 
-  // 全部退貨：把可退 > 0 的 row 都勾起來、return_qty 填到 remaining
   const handleReturnAll = () => {
     setRows(prev => prev.map(r => r.remaining > 0
       ? { ...r, checked: true, return_qty: String(r.remaining) }
@@ -807,7 +662,7 @@ function ReturnModal({
     const errs: string[] = []
     for (const r of valid) {
       try {
-        const res = await fetch(`/api/purchase-orders/${po.po_id}/return`, {
+        const res = await fetch(`/api/purchase-orders/${po.採購單編號}/return`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -839,11 +694,11 @@ function ReturnModal({
           <div>
             <h3 className="font-semibold text-ink text-lg flex items-center gap-2">
               <span className="text-red-500">↩</span>
-              退貨登錄 — PO #{po.po_id}
+              退貨登錄 — PO #{po.採購單編號}
             </h3>
             <p className="text-xs text-ink/50 mt-1">
-              廠商：<span className="font-semibold text-ink">{po.supplier_name}</span>
-              ·「叫貨 / 已退 / 可退」三欄，填入要退的數量
+              廠商：<span className="font-semibold text-ink">{po.供應商名稱}</span>
+              · 填入要退的數量
             </p>
           </div>
           <button onClick={onClose} className="text-ink/40 hover:text-ink text-2xl leading-none">×</button>
@@ -946,7 +801,7 @@ function ReturnModal({
           )}
 
           <p className="mt-3 text-[11px] text-ink/40">
-            送出後庫存自動扣回對應數量；庫存不足或超量會被擋下。退貨後 PO 自動推進為「已退貨」。
+            送出後庫存自動扣回對應數量；庫存不足或超量會被擋下。退貨後 PO 自動推進為「已取消」。
           </p>
         </div>
 

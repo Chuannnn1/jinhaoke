@@ -20,7 +20,7 @@ interface SetupBody {
 }
 
 export async function POST(req: Request) {
-  if (getStoredHash()) {
+  if (await getStoredHash()) {
     return NextResponse.json(
       { success: false, error: 'already_configured' },
       { status: 410 }
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   const hash = hashPassword(password)
 
   try {
-    setAdminSetting('admin_password_hash', hash)
+    await setAdminSetting('admin_password_hash', hash)
   } catch (e) {
     console.error('[auth/setup] 寫 DB 失敗:', e)
     return NextResponse.json(
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
 
   // 順手發 session cookie
   const userAgent = req.headers.get('user-agent') ?? undefined
-  const { token, expiresAt } = createSession(userAgent)
+  const { token, expiresAt } = await createSession(userAgent)
 
   const res = NextResponse.json({
     success: true,

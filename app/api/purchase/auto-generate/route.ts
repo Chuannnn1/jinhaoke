@@ -1,30 +1,13 @@
-// app/api/purchase/auto-generate/route.ts
-// ============================================================
-// 自動補貨建議
-//   POST /api/purchase/auto-generate
-//
-// 兩種模式：
-//   (A) 帶 body { items: [{ ingredient_name, supplier_name, order_qty }, ...] }
-//       → 老闆在低庫存彈窗手動選好廠商/數量，按 supplier 分組建單
-//   (B) 不帶 body（fallback 舊行為）
-//       → 自動掃所有低庫存食材，用 ingredient.supplier_name 作為廠商，
-//         補到 2 × safety_stock，無供應商者 skip
-// ============================================================
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
-interface LowStockIngredient {
-  name: string
-  stock_qty: number
-  safety_stock: number
-  stock_unit: string
-  supplier_name: string | null
-}
-
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
+interface LowStockRow extends RowDataPacket {
+  食材名稱: string
+  庫存數量: number
+  安全存量: number
+  庫存單位: string
+  供應商名稱: string | null
 }
 
 interface AutoGenResult {
@@ -47,62 +30,52 @@ interface BodyItem {
 
 export async function POST(req: Request) {
   try {
-    const db = getDb()
+    const pool = getPool()
 
-    // 解析 body（可選）
     let body: { items?: BodyItem[] } | null = null
     try {
       const text = await req.text()
       if (text && text.trim().length > 0) body = JSON.parse(text)
     } catch {
-      return NextResponse.json<ApiResponse>(
+      return NextResponse.json(
         { success: false, error: 'body JSON 解析失敗' },
         { status: 400 }
       )
     }
 
-    // ── 模式 A：老闆手動指定 items ─────────────────────────
+    // 模式 A：手動指定
     if (body?.items && Array.isArray(body.items) && body.items.length > 0) {
-      return handleManualMode(db, body.items)
+      return handleManualMode(pool, body.items)
     }
 
-    const lowStock = db.prepare(`
-      SELECT name, stock_qty, safety_stock, stock_unit, supplier_name
-      FROM ingredient
-      WHERE safety_stock > 0
-        AND stock_qty <= safety_stock
-      ORDER BY supplier_name, name
-    `).all() as LowStockIngredient[]
+    // 模式 B：自動掃低庫存
+    const [lowStock] = await pool.execute<LowStockRow[]>(`
+      SELECT \`食材名稱\`, \`庫存數量\`, \`安全存量\`, \`庫存單位\`, \`供應商名稱\`
+      FROM \`食材\`
+      WHERE \`安全存量\` > 0 AND \`庫存數量\` <= \`安全存量\`
+      ORDER BY \`供應商名稱\`, \`食材名稱\`
+    `)
 
     if (lowStock.length === 0) {
-      return NextResponse.json<ApiResponse<AutoGenResult>>(
-        {
-          success: true,
-          data: {
-            created_count: 0,
-            created_orders: [],
-            covered_ingredients: [],
-            skipped_no_supplier: [],
-          },
-        },
-        { status: 200 }
-      )
+      return NextResponse.json({
+        success: true,
+        data: { created_count: 0, created_orders: [], covered_ingredients: [], skipped_no_supplier: [] },
+      })
     }
 
-    // 按 supplier 分組
-    const bySupplier = new Map<string, LowStockIngredient[]>()
+    const bySupplier = new Map<string, LowStockRow[]>()
     const skipped: string[] = []
     for (const ing of lowStock) {
-      if (!ing.supplier_name) {
-        skipped.push(ing.name)
+      if (!ing.供應商名稱) {
+        skipped.push(ing.食材名稱)
         continue
       }
-      const arr = bySupplier.get(ing.supplier_name) ?? []
+      const arr = bySupplier.get(ing.供應商名稱) ?? []
       arr.push(ing)
-      bySupplier.set(ing.supplier_name, arr)
+      bySupplier.set(ing.供應商名稱, arr)
     }
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
     const result: AutoGenResult = {
       created_count: 0,
       created_orders: [],
@@ -110,91 +83,80 @@ export async function POST(req: Request) {
       skipped_no_supplier: skipped,
     }
 
-    db.transaction(() => {
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+
       for (const [supplier, items] of bySupplier) {
-        // supplier 必須存在於 supplier 表（FK）
-        const sup = db
-          .prepare('SELECT name FROM supplier WHERE name = ?')
-          .get(supplier)
-        if (!sup) {
-          // 食材掛了不存在的 supplier_name → 視為 skipped
-          for (const it of items) skipped.push(it.name)
+        // 確認供應商存在
+        const [supRows] = await conn.execute<RowDataPacket[]>(
+          'SELECT `供應商名稱` FROM `供應商` WHERE `供應商名稱` = ?', [supplier]
+        )
+        if (supRows.length === 0) {
+          for (const it of items) skipped.push(it.食材名稱)
           continue
         }
 
-        const poResult = db.prepare(`
-          INSERT INTO purchase_order (po_date, supplier_name, total_amount, status)
-          VALUES (?, ?, 0, '已訂購')
-        `).run(today, supplier)
-
-        const newPoId = Number(poResult.lastInsertRowid)
+        const [poResult] = await conn.execute<ResultSetHeader>(
+          'INSERT INTO `採購單` (`採購單日期`, `供應商名稱`, `進貨食材總成本`, `採購單狀態`) VALUES (?, ?, 0, ?)',
+          [today, supplier, '已下單']
+        )
+        const newPoId = poResult.insertId
 
         let itemCount = 0
         for (const ing of items) {
-          // 補到 2 倍 safety_stock 所需數量（以 stock_unit 計）
-          const target = ing.safety_stock * 2
-          const needed = Math.max(0, target - ing.stock_qty)
-          // 浮點殘留處理：四捨五入到 1 位（與 inventory 顯示一致）
+          const target = ing.安全存量 * 2
+          const needed = Math.max(0, target - ing.庫存數量)
           const orderQty = Math.round(needed * 10) / 10
           if (orderQty <= 0) continue
 
-          db.prepare(`
-            INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, total_cost)
-            VALUES (?, ?, ?, 0)
-          `).run(newPoId, ing.name, orderQty)
-
-          result.covered_ingredients.push(ing.name)
+          await conn.execute(
+            'INSERT INTO `採購單明細` (`採購單編號`, `食材名稱`, `數量`) VALUES (?, ?, ?)',
+            [newPoId, ing.食材名稱, orderQty]
+          )
+          result.covered_ingredients.push(ing.食材名稱)
           itemCount++
         }
 
-        // 如果這張單沒有任何明細，回滾掉這張單
         if (itemCount === 0) {
-          db.prepare('DELETE FROM purchase_order WHERE po_id = ?').run(newPoId)
+          await conn.execute('DELETE FROM `採購單` WHERE `採購單編號` = ?', [newPoId])
           continue
         }
 
         result.created_count++
-        result.created_orders.push({
-          po_id: newPoId,
-          supplier_name: supplier,
-          item_count: itemCount,
-        })
+        result.created_orders.push({ po_id: newPoId, supplier_name: supplier, item_count: itemCount })
       }
-    })()
+
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
+    }
 
     result.skipped_no_supplier = skipped
-
-    return NextResponse.json<ApiResponse<AutoGenResult>>(
-      { success: true, data: result },
-      { status: 200 }
-    )
+    return NextResponse.json({ success: true, data: result })
   } catch (err) {
     console.error('[POST /api/purchase/auto-generate]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
 // ============================================================
-// 模式 A：依使用者指定的 {ingredient, supplier, qty} 分組建單
+// 模式 A：依使用者指定的 items 分組建單
 // ============================================================
-function handleManualMode(
-  db: ReturnType<typeof getDb>,
-  rawItems: BodyItem[]
-) {
-  // 驗證每筆
+async function handleManualMode(pool: ReturnType<typeof getPool>, rawItems: BodyItem[]) {
   const cleaned: BodyItem[] = []
   for (const it of rawItems) {
     if (!it.ingredient_name?.trim() || !it.supplier_name?.trim()) {
-      return NextResponse.json<ApiResponse>(
+      return NextResponse.json(
         { success: false, error: 'items 每筆需含 ingredient_name + supplier_name' },
         { status: 400 }
       )
     }
     const qty = Number(it.order_qty)
-    if (!Number.isFinite(qty) || qty <= 0) continue   // qty 為 0 視為「不下單」，過濾掉
+    if (!Number.isFinite(qty) || qty <= 0) continue
     cleaned.push({
       ingredient_name: it.ingredient_name.trim(),
       supplier_name: it.supplier_name.trim(),
@@ -205,34 +167,28 @@ function handleManualMode(
     })
   }
   if (cleaned.length === 0) {
-    return NextResponse.json<ApiResponse<AutoGenResult>>(
-      {
-        success: true,
-        data: { created_count: 0, created_orders: [], covered_ingredients: [], skipped_no_supplier: [] },
-      },
-      { status: 200 }
-    )
+    return NextResponse.json({
+      success: true,
+      data: { created_count: 0, created_orders: [], covered_ingredients: [], skipped_no_supplier: [] },
+    })
   }
 
   // FK 驗證
   for (const it of cleaned) {
-    const ing = db.prepare('SELECT name FROM ingredient WHERE name = ?').get(it.ingredient_name)
-    if (!ing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: `找不到食材：${it.ingredient_name}` },
-        { status: 400 }
-      )
+    const [ingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `食材名稱` FROM `食材` WHERE `食材名稱` = ?', [it.ingredient_name]
+    )
+    if (ingRows.length === 0) {
+      return NextResponse.json({ success: false, error: `找不到食材：${it.ingredient_name}` }, { status: 400 })
     }
-    const sup = db.prepare('SELECT name FROM supplier WHERE name = ?').get(it.supplier_name)
-    if (!sup) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: `找不到供應商：${it.supplier_name}` },
-        { status: 400 }
-      )
+    const [supRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `供應商名稱` FROM `供應商` WHERE `供應商名稱` = ?', [it.supplier_name]
+    )
+    if (supRows.length === 0) {
+      return NextResponse.json({ success: false, error: `找不到供應商：${it.supplier_name}` }, { status: 400 })
     }
   }
 
-  // 按 supplier 分組（PK 衝突防護：同 supplier 內同食材合併 qty + cost）
   const bySupplier = new Map<string, Map<string, { qty: number; userCost?: number }>>()
   for (const it of cleaned) {
     const m = bySupplier.get(it.supplier_name) ?? new Map<string, { qty: number; userCost?: number }>()
@@ -246,7 +202,7 @@ function handleManualMode(
     bySupplier.set(it.supplier_name, m)
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
   const result: AutoGenResult = {
     created_count: 0,
     created_orders: [],
@@ -254,57 +210,43 @@ function handleManualMode(
     skipped_no_supplier: [],
   }
 
-  db.transaction(() => {
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+
     for (const [supplier, items] of bySupplier) {
-      const poResult = db.prepare(`
-        INSERT INTO purchase_order (po_date, supplier_name, total_amount, status)
-        VALUES (?, ?, 0, '已訂購')
-      `).run(today, supplier)
-      const newPoId = Number(poResult.lastInsertRowid)
+      const [poResult] = await conn.execute<ResultSetHeader>(
+        'INSERT INTO `採購單` (`採購單日期`, `供應商名稱`, `進貨食材總成本`, `採購單狀態`) VALUES (?, ?, 0, ?)',
+        [today, supplier, '已下單']
+      )
+      const newPoId = poResult.insertId
 
       let itemCount = 0
-      for (const [ingName, { qty, userCost }] of items) {
-        // 嘗試吃 ingredient_supplier.price_per_order_unit × (qty / qty_per_order_unit) 估價
-        const priceRow = db.prepare(`
-          SELECT s.price_per_order_unit AS price, i.qty_per_order_unit AS perOrder
-          FROM ingredient_supplier s
-          JOIN ingredient i ON i.name = s.ingredient_name
-          WHERE s.ingredient_name = ? AND s.supplier_name = ?
-        `).get(ingName, supplier) as { price: number | null; perOrder: number } | undefined
-        const estCost =
-          priceRow?.price && priceRow.perOrder > 0
-            ? Math.round((priceRow.price * qty) / priceRow.perOrder * 100) / 100
-            : 0
-
-        // 使用者提供的成本優先，否則用估算值
-        const finalCost = (userCost && userCost > 0) ? userCost : estCost
-
-        db.prepare(`
-          INSERT INTO purchase_order_item (po_id, ingredient_name, order_qty, total_cost)
-          VALUES (?, ?, ?, ?)
-        `).run(newPoId, ingName, qty, finalCost)
+      for (const [ingName, { qty }] of items) {
+        await conn.execute(
+          'INSERT INTO `採購單明細` (`採購單編號`, `食材名稱`, `數量`) VALUES (?, ?, ?)',
+          [newPoId, ingName, qty]
+        )
         result.covered_ingredients.push(ingName)
         itemCount++
       }
 
       if (itemCount === 0) {
-        db.prepare('DELETE FROM purchase_order WHERE po_id = ?').run(newPoId)
+        await conn.execute('DELETE FROM `採購單` WHERE `採購單編號` = ?', [newPoId])
         continue
       }
-
-      // 彙總 total_amount
-      const sum = db
-        .prepare('SELECT COALESCE(SUM(total_cost), 0) AS s FROM purchase_order_item WHERE po_id = ?')
-        .get(newPoId) as { s: number }
-      db.prepare('UPDATE purchase_order SET total_amount = ? WHERE po_id = ?').run(sum.s, newPoId)
 
       result.created_count++
       result.created_orders.push({ po_id: newPoId, supplier_name: supplier, item_count: itemCount })
     }
-  })()
 
-  return NextResponse.json<ApiResponse<AutoGenResult>>(
-    { success: true, data: result },
-    { status: 200 }
-  )
+    await conn.commit()
+  } catch (err) {
+    await conn.rollback()
+    throw err
+  } finally {
+    conn.release()
+  }
+
+  return NextResponse.json({ success: true, data: result })
 }

@@ -18,7 +18,7 @@ interface Body {
 }
 
 export async function POST(req: Request) {
-  const guard = requireAdmin(req)
+  const guard = await requireAdmin(req)
   if (guard) return guard
 
   let body: Body = {}
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const stored = getStoredHash()
+  const stored = await getStoredHash()
   if (!stored) {
     return NextResponse.json(
       { success: false, error: '目前沒有設定密碼（請回登入頁走初始化）' },
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    setAdminSetting('admin_password_hash', hashPassword(next))
+    await setAdminSetting('admin_password_hash', hashPassword(next))
   } catch (e) {
     console.error('[auth/change-password] 寫 DB 失敗:', e)
     return NextResponse.json(

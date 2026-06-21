@@ -1,47 +1,14 @@
-// app/api/inventory/[name]/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
-interface InventoryRow {
-  name: string
-  stock_qty: number
-  safety_stock: number
-  stock_unit: string
-  order_unit: string
-  qty_per_order_unit: number
-  supplier_name: string | null
-  order_block_threshold: number | null
-  category: string
+interface IngredientRow extends RowDataPacket {
+  食材名稱: string
+  庫存數量: number
+  安全存量: number
+  庫存單位: string
+  供應商名稱: string | null
 }
-
-interface UpdateInventoryBody {
-  stock_qty: number
-  note?: string
-}
-
-interface PatchInventoryBody {
-  supplier_name?: string | null
-  safety_stock?: number
-  order_block_threshold?: number | null
-  stock_qty?: number
-  category?: string
-}
-
-const CATEGORY_OPTIONS = new Set(['豬', '雞', '牛', '魚', '其他'])
-
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
-}
-
-const SELECT_INVENTORY_SQL = [
-  'SELECT',
-  '  i.name, i.stock_qty, i.safety_stock, i.stock_unit,',
-  '  i.order_unit, i.qty_per_order_unit, i.supplier_name, i.order_block_threshold,',
-  '  i.category',
-  'FROM ingredient i WHERE i.name = ?',
-].join(' ')
 
 // GET /api/inventory/:name
 export async function GET(
@@ -49,81 +16,75 @@ export async function GET(
   { params }: { params: { name: string } }
 ) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const name = decodeURIComponent(params.name)
-    const row = db.prepare(SELECT_INVENTORY_SQL).get(name) as InventoryRow | undefined
 
-    if (!row) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該食材' },
-        { status: 404 }
-      )
+    const [rows] = await pool.execute<IngredientRow[]>(
+      'SELECT `食材名稱`, `庫存數量`, `安全存量`, `庫存單位`, `供應商名稱` FROM `食材` WHERE `食材名稱` = ?',
+      [name]
+    )
+    if (rows.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到該食材' }, { status: 404 })
     }
 
-    return NextResponse.json<ApiResponse<InventoryRow>>({ success: true, data: row })
+    return NextResponse.json({ success: true, data: rows[0] })
   } catch (err) {
     console.error('[GET /api/inventory/:name]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// PUT /api/inventory/:name — 維持舊行為：只調整 stock_qty
+// PUT /api/inventory/:name — 修改庫存數量
 export async function PUT(
   req: Request,
   { params }: { params: { name: string } }
 ) {
   try {
-    const body: UpdateInventoryBody = await req.json()
-    const db = getDb()
+    const body = await req.json()
+    const pool = getPool()
     const name = decodeURIComponent(params.name)
 
     if (body.stock_qty === undefined || typeof body.stock_qty !== 'number' || body.stock_qty < 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'stock_qty 為必填，且需為 >= 0 的數字' },
+      return NextResponse.json(
+        { success: false, error: 'stock_qty 為必填，且需 >= 0' },
         { status: 400 }
       )
     }
 
-    const existing = db.prepare('SELECT name FROM ingredient WHERE name = ?').get(name)
-    if (!existing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該食材' },
-        { status: 404 }
-      )
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT `食材名稱` FROM `食材` WHERE `食材名稱` = ?', [name]
+    )
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到該食材' }, { status: 404 })
     }
 
-    db.prepare('UPDATE ingredient SET stock_qty = ? WHERE name = ?')
-      .run(body.stock_qty, name)
+    await pool.execute(
+      'UPDATE `食材` SET `庫存數量` = ? WHERE `食材名稱` = ?',
+      [body.stock_qty, name]
+    )
 
-    return NextResponse.json<ApiResponse>({ success: true })
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[PUT /api/inventory/:name]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// PATCH /api/inventory/:name — 部分更新（supplier / safety / block / stock）
+// PATCH /api/inventory/:name — 部分更新
 export async function PATCH(
   req: Request,
   { params }: { params: { name: string } }
 ) {
   try {
-    const body: PatchInventoryBody = await req.json()
-    const db = getDb()
+    const body = await req.json()
+    const pool = getPool()
     const name = decodeURIComponent(params.name)
 
-    const existing = db.prepare('SELECT name FROM ingredient WHERE name = ?').get(name)
-    if (!existing) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '找不到該食材' },
-        { status: 404 }
-      )
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT `食材名稱` FROM `食材` WHERE `食材名稱` = ?', [name]
+    )
+    if (existing.length === 0) {
+      return NextResponse.json({ success: false, error: '找不到該食材' }, { status: 404 })
     }
 
     const sets: string[] = []
@@ -131,90 +92,53 @@ export async function PATCH(
 
     if (Object.prototype.hasOwnProperty.call(body, 'supplier_name')) {
       const v = body.supplier_name
-      if (v !== null && typeof v !== 'string') {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: 'supplier_name 必須為字串或 null' },
-          { status: 400 }
-        )
-      }
-      const normalized = v === null ? null : (v.trim() === '' ? null : v.trim())
+      const normalized = (v === null || v === '') ? null : String(v).trim()
       if (normalized !== null) {
-        const s = db.prepare('SELECT name FROM supplier WHERE name = ?').get(normalized)
-        if (!s) {
-          return NextResponse.json<ApiResponse>(
-            { success: false, error: '找不到該供應商' },
-            { status: 400 }
-          )
+        const [s] = await pool.execute<RowDataPacket[]>(
+          'SELECT `供應商名稱` FROM `供應商` WHERE `供應商名稱` = ?', [normalized]
+        )
+        if (s.length === 0) {
+          return NextResponse.json({ success: false, error: '找不到該供應商' }, { status: 400 })
         }
       }
-      sets.push('supplier_name = ?')
+      sets.push('`供應商名稱` = ?')
       values.push(normalized)
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'safety_stock')) {
-      if (typeof body.safety_stock !== 'number' || body.safety_stock < 0 || !Number.isFinite(body.safety_stock)) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: 'safety_stock 必須為 >= 0 的數字' },
-          { status: 400 }
-        )
+      if (typeof body.safety_stock !== 'number' || body.safety_stock < 0) {
+        return NextResponse.json({ success: false, error: '安全存量需 >= 0' }, { status: 400 })
       }
-      sets.push('safety_stock = ?')
+      sets.push('`安全存量` = ?')
       values.push(body.safety_stock)
     }
 
-    if (Object.prototype.hasOwnProperty.call(body, 'order_block_threshold')) {
-      const v = body.order_block_threshold
-      if (v !== null) {
-        if (typeof v !== 'number' || v < 0 || !Number.isFinite(v)) {
-          return NextResponse.json<ApiResponse>(
-            { success: false, error: 'order_block_threshold 必須為 >= 0 的數字或 null' },
-            { status: 400 }
-          )
-        }
-      }
-      sets.push('order_block_threshold = ?')
-      values.push(v)
-    }
-
     if (Object.prototype.hasOwnProperty.call(body, 'stock_qty')) {
-      if (typeof body.stock_qty !== 'number' || body.stock_qty < 0 || !Number.isFinite(body.stock_qty)) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: 'stock_qty 必須為 >= 0 的數字' },
-          { status: 400 }
-        )
+      if (typeof body.stock_qty !== 'number' || body.stock_qty < 0) {
+        return NextResponse.json({ success: false, error: '庫存數量需 >= 0' }, { status: 400 })
       }
-      sets.push('stock_qty = ?')
+      sets.push('`庫存數量` = ?')
       values.push(body.stock_qty)
     }
 
-    if (Object.prototype.hasOwnProperty.call(body, 'category')) {
-      if (!body.category || !CATEGORY_OPTIONS.has(body.category)) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: 'category 必須是 豬 / 雞 / 牛 / 魚 / 其他 之一' },
-          { status: 400 }
-        )
-      }
-      sets.push('category = ?')
-      values.push(body.category)
-    }
-
     if (sets.length === 0) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: '無可更新的欄位' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: '無可更新的欄位' }, { status: 400 })
     }
 
     values.push(name)
-    db.prepare(`UPDATE ingredient SET ${sets.join(', ')} WHERE name = ?`).run(...values)
+    await pool.execute(
+      `UPDATE \`食材\` SET ${sets.join(', ')} WHERE \`食材名稱\` = ?`,
+      values
+    )
 
-    const updated = db.prepare(SELECT_INVENTORY_SQL).get(name) as InventoryRow
-    return NextResponse.json<ApiResponse<InventoryRow>>({ success: true, data: updated })
+    const [updated] = await pool.execute<IngredientRow[]>(
+      'SELECT `食材名稱`, `庫存數量`, `安全存量`, `庫存單位`, `供應商名稱` FROM `食材` WHERE `食材名稱` = ?',
+      [name]
+    )
+
+    return NextResponse.json({ success: true, data: updated[0] })
   } catch (err) {
     console.error('[PATCH /api/inventory/:name]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }

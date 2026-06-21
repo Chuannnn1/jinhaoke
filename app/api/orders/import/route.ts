@@ -1,52 +1,12 @@
-import { getDb } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
 // ============================================================
 // POST /api/orders/import
-// 透過 multipart/form-data 上傳 CSV，預覽或匯入訂單
+// CSV 匯入訂單
 //
-// CSV 格式（店家實際匯出）：
-//   檔名：MMDD.csv（例 0519.csv -> 2026-05-19）
-//   標頭：編號,金額,電話,付款狀態,品項,辣度
-//   品項：分號分隔 code，可選 *N 表數量（例：5;21、5*14;7*12）
-//   辣度：分號分隔（無/小/微/大/null），對應 items 順序，記為 note
-//
-// 流程：
-//   1. preview 階段（confirm != '1'）回 unmapped_codes + menu_options，由 UI 補 mapping
-//   2. confirm 階段（confirm == '1'）需附 mapping JSON：{ [code: string]: item_id }
-//
-// ────────────────────────────────────────────────────────────
-// CSV 匯入「code → item_id」判斷原則（後續維護請對齊）
-// ────────────────────────────────────────────────────────────
-//   1. **預設 1:1 對應**：CSV `code = N` 直接對應 `menu_item.item_id = N`，
-//      包含已下架（is_active=0）品項，照樣會匯入歷史紀錄。
-//      這就是為什麼 menu_item 的 item_id 是「店家 POS 編號」，不要隨便重排。
-//
-//   2. **手動 mapping override**：preview 階段 UI 補的 mapping JSON 永遠優先，
-//      自動 1:1 只在缺漏時補。用來處理「code 暫時 reassign」之類的個案。
-//
-//   3. **未對應 code（unmapped）→ 跳過**：CSV 出現 menu_item 沒有的 code，
-//      preview 會列在 `unmapped_codes`、UI 顯示「已忽略 N 個未對應 code」，
-//      實際匯入時這些品項會被 filter 掉，不會阻擋整張訂單匯入。
-//      訂單若全是 unmapped 也會跳過該筆（itemsCount 不會計入）。
-//
-//   4. **想要新 code 被認識，請走這個 SOP**：
-//      a. 在 `scripts/seed-data.js` `MENU_ITEMS` 後面 append 新項目（item_id 自動接續）
-//      b. 寫一支 `scripts/migrate-add-XXX.js` migration 補進既有 DB（用 INSERT
-//         指定 item_id；idempotent；參考 `migrate-add-addon-menu.js`）
-//      c. 把 migration 串進 `package.json` 的 `db:migrate` script
-//      d. 在 `品項對照表.txt` 或 schema 文件補上對應，未來看 CSV 才知道含義
-//      e. 重 deploy 前一定要先跑 `npm run db:migrate`（VM 上是
-//         `sudo -u jinhaoke DB_PATH=/var/lib/jinhaoke/jinhaoke.db npm run db:migrate`）
-//
-//   5. **沒打算長期支援的 code**：保留 unmapped 流程即可（會自動跳過 + log），
-//      不要為了「不顯示警告」隨便塞假名稱進 menu_item。
-//
-//   6. **被 deactivate 的菜（is_active=0）**：仍然會被 import 認得（規則 1），
-//      只是 UI 顯示時會標 [已下架]。歷史訂單照常統計營收。
-//
-//   現行已加入的 26-31（沙茶燴雞肉 / 加菜 / 加牛 / 加豬 / 加雞 / 加飯）已對齊
-//   `品項對照表.txt` 2026-05-28 版本；CSV 內出現 27/28/29/31 都會正確 import。
+// CSV 格式：MMDD.csv，標頭：編號,金額,電話,付款狀態,品項,辣度
 // ============================================================
 
 interface ParsedItem {
@@ -56,33 +16,31 @@ interface ParsedItem {
 
 interface ParsedRow {
   rowNum: number
-  daily_seq: number        // 編號
-  amount_csv: number       // 金額（cost ref，只供參考）
-  phone: string            // 電話原值（可空）
-  paid: boolean            // 0=未付,1=已付
-  items: ParsedItem[]      // 品項列表
-  spice: string[]          // 辣度列表
+  daily_seq: number
+  amount_csv: number
+  phone: string
+  paid: boolean
+  items: ParsedItem[]
+  spice: string[]
 }
 
 interface ValidItemPreview {
   code: number
   qty: number
   spice: string
-  // 若預覽時已有 mapping 就帶 name/unit_price
   item_name?: string
-  unit_price?: number
   item_id?: number
-  is_active?: number          // 1=上架中, 0=已下架（如：滷豬腳便當）
+  is_active?: number
 }
 
 interface ValidOrderPreview {
   order_id: string
   status: string
   items: ValidItemPreview[]
-  total: number              // 用 unit_price * qty 重算（已 mapping 部分）
-  amount_csv: number         // CSV 原始金額（cost ref）
+  total: number
+  amount_csv: number
   phone: string
-  note: string               // 由辣度組合
+  note: string
 }
 
 interface RowError {
@@ -90,11 +48,11 @@ interface RowError {
   reason: string
 }
 
-interface MenuLookupRow {
-  item_id: number
-  name: string
-  price: number
-  is_active: number
+interface MenuLookupRow extends RowDataPacket {
+  餐點編號: number
+  餐點名稱: string
+  餐點價格: number
+  上下架狀態: number
 }
 
 function splitCsvLine(line: string): string[] {
@@ -110,7 +68,6 @@ function parseCsv(text: string): { header: string[]; rows: string[][] } {
   return { header, rows }
 }
 
-// 解析品項字串 "5;21;27*2;5*14" -> [{code:5,qty:1},{code:21,qty:1},{code:27,qty:2},{code:5,qty:14}]
 function parseItems(raw: string): { ok: boolean; items: ParsedItem[]; reason?: string } {
   const items: ParsedItem[] = []
   const parts = raw.split(';').map(s => s.trim()).filter(s => s.length > 0)
@@ -135,20 +92,17 @@ function parseItems(raw: string): { ok: boolean; items: ParsedItem[]; reason?: s
   return { ok: true, items }
 }
 
-// 解析辣度 "無;無;21無" -> ["無","無","21無"]
 function parseSpice(raw: string): string[] {
   if (!raw || raw.toLowerCase() === 'null') return []
   return raw.split(';').map(s => s.trim())
 }
 
-// 解析電話：接受 3~15 碼數字 或 'null' 或空 -> 直接存原值或空字串
 function parsePhone(raw: string): { ok: boolean; phone: string; reason?: string } {
   if (!raw || raw.toLowerCase() === 'null') return { ok: true, phone: '' }
   if (!/^\d{3,15}$/.test(raw)) return { ok: false, phone: '', reason: `電話格式錯誤：${raw}` }
   return { ok: true, phone: raw }
 }
 
-// 解析檔名 "0519.csv" / "0519" -> "2026-05-19"
 function parseDateFromFilename(filename: string): { ok: boolean; date?: string; ymdCompact?: string; reason?: string } {
   const base = filename.replace(/\.csv$/i, '').trim()
   const m = base.match(/^(\d{2})(\d{2})$/)
@@ -189,8 +143,6 @@ export async function POST(request: Request) {
     const orderDate = dateParse.date!
     const ymdCompact = dateParse.ymdCompact!
 
-    // 今日日期（台灣時區 UTC+8）：用來判斷是否「過去訂單」
-    // 過去訂單一律強制 status='已完成'，避免出現在 admin kanban 的「待製作/製作中/待付款」欄
     const todayISO = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
     const isPastOrder = orderDate !== todayISO
 
@@ -205,20 +157,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const db = getDb()
+    const pool = getPool()
 
-    // 預載 menu_item（含已下架；用 code === item_id 自動對應，避免要使用者手動下拉）
-    const menuRows = db
-      .prepare('SELECT item_id, name, price, is_active FROM menu_item ORDER BY item_id')
-      .all() as MenuLookupRow[]
-    const menuById = new Map<number, MenuLookupRow>()
-    for (const m of menuRows) menuById.set(m.item_id, m)
-
-    // 預載既有 order_id（衝突判斷）
-    const existingOrderIds = new Set<string>(
-      (db.prepare('SELECT order_id FROM "order"').all() as { order_id: string }[])
-        .map(r => r.order_id)
+    // 預載餐點（含已下架）
+    const [menuRows] = await pool.execute<MenuLookupRow[]>(
+      'SELECT `餐點編號`, `餐點名稱`, `餐點價格`, `上下架狀態` FROM `餐點` ORDER BY `餐點編號`'
     )
+    const menuById = new Map<number, MenuLookupRow>()
+    for (const m of menuRows) menuById.set(m.餐點編號, m)
+
+    // 預載既有訂單編號
+    const [existingRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT `訂單編號` FROM `訂單`'
+    )
+    const existingOrderIds = new Set<string>(existingRows.map(r => r.訂單編號 as string))
 
     const errors: RowError[] = []
     const parsedRows: ParsedRow[] = []
@@ -272,7 +224,6 @@ export async function POST(request: Request) {
 
       const spice = parseSpice(spiceRaw)
 
-      // order_id 衝突判斷（格式：A + YYYYMMDD + 4 碼當日流水）
       const orderId = `A${ymdCompact}${String(seq).padStart(4, '0')}`
       if (existingOrderIds.has(orderId)) {
         errors.push({ row: rowNum, reason: `order_id 已存在：${orderId}` })
@@ -291,11 +242,11 @@ export async function POST(request: Request) {
       })
     }
 
-    // 蒐集出現過的 code
+    // 蒐集 codes
     const codeSet = new Set<number>()
     for (const r of parsedRows) for (const it of r.items) codeSet.add(it.code)
 
-    // 解析 mapping（如果 client 有傳）
+    // 解析 mapping
     let mapping: Record<string, number> = {}
     if (mappingRaw && typeof mappingRaw === 'string') {
       try {
@@ -314,15 +265,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // 自動對應：code 直接等於 menu_item.item_id（依編號表 1:1 對應，含已下架品項）
-    // 使用者手動傳入的 mapping 優先生效，僅在缺漏時補上自動對應
+    // 自動對應：code === 餐點編號
     for (const code of Array.from(codeSet)) {
       if (!mapping[String(code)] && menuById.has(code)) {
         mapping[String(code)] = code
       }
     }
 
-    // 計算 unmapped_codes：在 codeSet 中且 mapping 沒給對應 item_id
     const unmappedCodes: number[] = []
     for (const code of Array.from(codeSet).sort((a, b) => a - b)) {
       const mapped = mapping[String(code)]
@@ -332,7 +281,6 @@ export async function POST(request: Request) {
     // 組合預覽訂單
     const valid: ValidOrderPreview[] = parsedRows.map(r => {
       const orderId = `A${ymdCompact}${String(r.daily_seq).padStart(4, '0')}`
-      // 過去訂單 → 強制「已完成」（不論 CSV 付款狀態），不要污染今日 kanban
       const status = isPastOrder ? '已完成' : (r.paid ? '已完成' : '待付款')
       const items: ValidItemPreview[] = r.items.map((it, idx) => {
         const mapped = mapping[String(it.code)]
@@ -341,14 +289,15 @@ export async function POST(request: Request) {
           code: it.code,
           qty: it.qty,
           spice: r.spice[idx] ?? '',
-          item_name: menu?.name,
-          unit_price: menu?.price,
-          item_id: menu?.item_id,
-          is_active: menu?.is_active,
+          item_name: menu?.餐點名稱,
+          item_id: menu?.餐點編號,
+          is_active: menu?.上下架狀態,
         }
       })
-      // total：已 mapping 的相加；未 mapping 算 0（預覽時呈現部分）
-      const total = items.reduce((s, it) => s + (it.unit_price ?? 0) * it.qty, 0)
+      const total = items.reduce((s, it) => {
+        const menu = it.item_id ? menuById.get(it.item_id) : undefined
+        return s + (menu?.餐點價格 ?? 0) * it.qty
+      }, 0)
       const noteParts = r.spice
         .map((sp, idx) => sp ? `${items[idx]?.item_name ?? `code${items[idx]?.code}`}:${sp}` : '')
         .filter(s => s.length > 0)
@@ -382,10 +331,10 @@ export async function POST(request: Request) {
         errors,
         unmapped_codes: unmappedCodes,
         menu_options: menuRows.map(m => ({
-          item_id: m.item_id,
-          name: m.name,
-          price: m.price,
-          is_active: m.is_active,
+          item_id: m.餐點編號,
+          name: m.餐點名稱,
+          price: m.餐點價格,
+          is_active: m.上下架狀態,
         })),
       })
     }
@@ -398,60 +347,49 @@ export async function POST(request: Request) {
       )
     }
     if (unmappedCodes.length > 0) {
-      // 不再阻擋匯入：有未對應 code 時跳過該品項，繼續匯入其餘可對應的項目
-      // （unmapped 品項會在 import 階段被 filter 掉）
       console.warn(`CSV import 發現未對應 code：${unmappedCodes.join(', ')}，將跳過這些品項`)
     }
 
-    const insertOrder = db.prepare(`
-      INSERT INTO "order" (order_id, order_date, created_at, updated_at, status, customer_phone, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-    const insertItem = db.prepare(`
-      INSERT INTO order_item (order_id, item_id, quantity, unit_price)
-      VALUES (?, ?, ?, ?)
-    `)
-    const insertCustomer = db.prepare(`
-      INSERT OR IGNORE INTO delivery_customer (phone) VALUES (?)
-    `)
-    const nowFallback = db.prepare(`SELECT datetime('now', '+8 hours') AS t`)
-    const fallbackRow = nowFallback.get() as { t: string }
-    const fallbackTime = fallbackRow.t
+    // 訂單日期用 DATETIME
+    const datetimeStr = `${orderDate} 12:00:00`
 
-    const tx = db.transaction(() => {
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+
       for (const order of valid) {
         const phoneOrNull = order.phone || null
-        if (phoneOrNull) insertCustomer.run(phoneOrNull)
-        insertOrder.run(
-          order.order_id,
-          orderDate,
-          fallbackTime,
-          fallbackTime,
-          order.status,
-          phoneOrNull,
-          order.note || null
+
+        await conn.execute(
+          'INSERT INTO `訂單` (`訂單編號`, `訂單日期`, `訂單狀態`, `顧客電話`, `備註`) VALUES (?, ?, ?, ?, ?)',
+          [order.order_id, datetimeStr, order.status, phoneOrNull, order.note || null]
         )
-        // 同 order_id + item_id 為 PK，需聚合同一 item_id 的 qty
-        const agg = new Map<number, { qty: number; unit_price: number }>()
+
+        // 聚合同一 餐點編號 的數量（PK 是複合鍵）
+        const agg = new Map<number, number>()
         for (const it of order.items) {
-          if (!it.item_id || it.unit_price === undefined) continue
-          const cur = agg.get(it.item_id)
-          if (cur) {
-            cur.qty += it.qty
-          } else {
-            agg.set(it.item_id, { qty: it.qty, unit_price: it.unit_price })
-          }
+          if (!it.item_id) continue
+          const cur = agg.get(it.item_id) ?? 0
+          agg.set(it.item_id, cur + it.qty)
         }
-        for (const [itemId, info] of agg) {
-          insertItem.run(order.order_id, itemId, info.qty, info.unit_price)
+        for (const [itemId, qty] of agg) {
+          await conn.execute(
+            'INSERT INTO `訂單明細` (`訂單編號`, `餐點編號`, `數量`, `客製化`) VALUES (?, ?, ?, ?)',
+            [order.order_id, itemId, qty, '[]']
+          )
         }
       }
-    })
-    tx()
 
-    // 實際有寫入品項的訂單數（排除全部都是 unmapped code 的訂單）
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
+    }
+
     const actualImportedOrders = valid.filter(o =>
-      o.items.some(it => it.item_id !== undefined && it.unit_price !== undefined)
+      o.items.some(it => it.item_id !== undefined)
     )
 
     return NextResponse.json({

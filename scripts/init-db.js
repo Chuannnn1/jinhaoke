@@ -1,149 +1,79 @@
-// scripts/init-db.js
-// ============================================================
-// 金濠客 POS 系統 — 資料庫一鍵初始化
-// ============================================================
-// 流程：
-//   1. 確保 data/ 目錄存在
-//   2. 跑 lib/schema.sql 建表（CREATE TABLE IF NOT EXISTS）
-//   3. 依序跑所有 migration（idempotent，已新版會自動 skip）
-//   4. 跑 seed（per-table COUNT 檢查，空才插入）
+// scripts/init-db.js — MySQL version
+// Usage: node scripts/init-db.js
 //
-// 使用：
-//   node scripts/init-db.js
-//
-// 適用情境：
-//   - 新環境 clone repo 後第一次建 DB
-//   - 舊環境想補上 migration 跟預設品項
-//   - 砍掉 data/jinhaoke.db 後重建
-//
-// ⚠️  跑之前先確保 dev server 已停（better-sqlite3 file lock）
-
+// 1. Connect to MySQL (reads .env.local or env vars)
+// 2. Run lib/schema.sql to create tables
+// 3. Run seed (idempotent — only inserts into empty tables)
 const path = require('path')
 const fs = require('fs')
-const Database = require('better-sqlite3')
+const mysql = require('mysql2/promise')
 
-const ROOT = path.join(__dirname, '..')
-const DB_PATH = path.join(ROOT, 'data', 'jinhaoke.db')
-const SCHEMA_PATH = path.join(ROOT, 'lib', 'schema.sql')
-
-// migration 檔案順序（依時間順序）
-const MIGRATIONS = [
-  'migrate-order-status-constraint.js',
-  'migrate-add-menu-image.js',
-  'migrate-add-block-threshold.js',
-]
-
-function log(section, msg) {
-  console.log(`[${section}] ${msg}`)
-}
-
-function section(name) {
-  console.log('')
-  console.log('═'.repeat(60))
-  console.log(`  ${name}`)
-  console.log('═'.repeat(60))
-}
-
-function ensureDataDir() {
-  const dir = path.dirname(DB_PATH)
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-    log('init', `建立目錄：${dir}`)
+// Load .env.local manually (Next.js doesn't load it for scripts)
+const envPath = path.join(__dirname, '..', '.env.local')
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2]
   }
 }
 
-function runSchema(db) {
-  section('Step 1: 跑 schema.sql 建表')
-  const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8')
-  db.exec(schema)
-  const tables = db.prepare(`
-    SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
-    ORDER BY name
-  `).all().map(r => r.name)
-  log('schema', `現有 table：${tables.join(', ')}`)
-}
+const SCHEMA_PATH = path.join(__dirname, '..', 'lib', 'schema.sql')
 
-function runMigrations() {
-  section('Step 2: 跑 migrations（idempotent）')
-  for (const file of MIGRATIONS) {
-    const full = path.join(__dirname, file)
-    if (!fs.existsSync(full)) {
-      log('migrate', `⚠️  跳過：找不到 ${file}`)
-      continue
-    }
-    log('migrate', `執行：${file}`)
+async function main() {
+  console.log('\njinhaoke POS — MySQL init')
+
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '3306', 10),
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'jinhaoke',
+    charset: 'utf8mb4',
+    multipleStatements: true,
+  })
+
+  console.log('[init] Connected to MySQL')
+
+  // Step 1: Run schema
+  console.log('\n[init] Running schema.sql...')
+  const schema = fs.readFileSync(SCHEMA_PATH, 'utf8')
+  // Split by semicolons, filter empty, run each statement
+  // (multipleStatements is enabled but running individually gives better error messages)
+  const statements = schema
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => s.length > 0 && !s.startsWith('--'))
+  for (const stmt of statements) {
     try {
-      // 用 child_process 跑，每個 migration 各自開 / 關 DB connection
-      // 這避免 file lock 衝突（migration 本身用 sync API）
-      const { execSync } = require('child_process')
-      execSync(`node "${full}"`, {
-        stdio: 'inherit',
-        cwd: ROOT,
-      })
+      await conn.execute(stmt)
     } catch (err) {
-      console.error(`[migrate] ❌ ${file} 失敗：`, err.message)
+      // Ignore "index already exists" errors (1061)
+      if (err.errno === 1061) continue
+      console.error(`[init] Error in statement: ${stmt.slice(0, 80)}...`)
       throw err
     }
   }
-}
 
-function runSeed() {
-  section('Step 3: 跑 seed 資料（空表才插入）')
-  // 重新開 DB connection（migration 跑完已經關過）
-  const db = new Database(DB_PATH)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
+  const [tables] = await conn.execute('SHOW TABLES')
+  console.log(`[init] Tables: ${tables.map(r => Object.values(r)[0]).join(', ')}`)
 
-  try {
-    const { seedAll } = require('./seed-data')
-    seedAll(db)
+  // Step 2: Seed
+  console.log('\n[init] Running seed...')
+  const { seedAll } = require('./seed-data')
+  await seedAll(conn)
 
-    // 統計
-    const stats = {
-      supplier:          db.prepare('SELECT COUNT(*) c FROM supplier').get().c,
-      ingredient:        db.prepare('SELECT COUNT(*) c FROM ingredient').get().c,
-      menu_item:         db.prepare('SELECT COUNT(*) c FROM menu_item').get().c,
-      recipe:            db.prepare('SELECT COUNT(*) c FROM recipe').get().c,
-      delivery_customer: db.prepare('SELECT COUNT(*) c FROM delivery_customer').get().c,
-      order:             db.prepare('SELECT COUNT(*) c FROM "order"').get().c,
-    }
-    console.log('')
-    log('seed', '目前資料量：')
-    for (const [k, v] of Object.entries(stats)) {
-      console.log(`         ${k.padEnd(20)} ${v}`)
-    }
-  } finally {
-    db.close()
-  }
-}
-
-function main() {
-  console.log('')
-  console.log('🍱 金濠客 POS — 資料庫一鍵初始化')
-  console.log(`   DB 路徑: ${DB_PATH}`)
-  console.log('')
-
-  ensureDataDir()
-
-  // Step 1: schema
-  const db = new Database(DB_PATH)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  try {
-    runSchema(db)
-  } finally {
-    db.close()
+  // Stats
+  const countTables = ['供應商', '食材', '餐點', '食譜']
+  for (const t of countTables) {
+    const [[row]] = await conn.execute(`SELECT COUNT(*) AS c FROM \`${t}\``)
+    console.log(`  ${t.padEnd(10)} ${row.c}`)
   }
 
-  // Step 2: migrations（child_process 跑，自己開 DB）
-  runMigrations()
-
-  // Step 3: seed（重新開 DB）
-  runSeed()
-
-  section('✅ 完成')
-  console.log('  下一步：npm run dev')
-  console.log('')
+  await conn.end()
+  console.log('\n[init] Done. Run: npm run dev')
 }
 
-main()
+main().catch(err => {
+  console.error('[init] Fatal:', err)
+  process.exit(1)
+})

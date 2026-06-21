@@ -1,21 +1,6 @@
-// app/api/reports/overview/route.ts
-// 統一報表 API — 四個尺度共用同一支端點。
-//
-// GET /api/reports/overview?scope=today|week|month|custom&date=YYYY-MM-DD&from=&to=
-//
-// 回傳：
-//   summary      — KPI 用：revenue / orders_count / avg_per_order / prev_revenue / change_pct
-//   timeseries   — 主圖用：[{ bucket, revenue, orders_count }]
-//                    scope=today  → bucket = '00'..'23' (24 小時)
-//                    scope=week   → bucket = 該週的 YYYY-MM-DD (7 筆)
-//                    scope=month  → bucket = 該月的 YYYY-MM-DD (28-31 筆)
-//                    scope=custom → bucket = YYYY-MM-DD; >60 天時前端可自行週彙總
-//   top_items    — 副區塊用：[{ name, qty, revenue }] top N
-//
-// 全部以 status='已完成' 計算（已出餐 → 算營收）。
-// ============================================================
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket } from 'mysql2/promise'
 
 interface SummaryBlock {
   revenue: number
@@ -23,12 +8,10 @@ interface SummaryBlock {
   avg_per_order: number
   prev_revenue: number
   prev_label: string
-  change_pct: number | null  // null = 上期為 0 無法算
-  // 採購成本 / 毛利（含已訂購 + 已驗貨；不含已退貨）
-  // 採購 cost 是依 purchase_order.po_date 落在期間內計算
+  change_pct: number | null
   cost: number
   prev_cost: number
-  profit: number              // revenue - cost
+  profit: number
   prev_profit: number
   profit_change_pct: number | null
 }
@@ -51,15 +34,8 @@ interface OverviewReport {
   summary: SummaryBlock
   timeseries: SeriesPoint[]
   top_items: TopItem[]
-  // KPI 卡片 sparkline：固定回最近 14 天（含當天回推 13 天）
   kpi_trend_revenue: number[]
   kpi_trend_orders: number[]
-}
-
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
 }
 
 function todayTW(): string {
@@ -78,20 +54,19 @@ function addDays(ymd: string, delta: number): string {
 
 function pct(curr: number, prev: number): number | null {
   if (prev === 0) return null
-  return Math.round(((curr - prev) / prev) * 1000) / 10  // 一位小數
+  return Math.round(((curr - prev) / prev) * 1000) / 10
 }
 
 export async function GET(req: Request) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const { searchParams } = new URL(req.url)
     const scopeRaw = (searchParams.get('scope') ?? 'today').toLowerCase()
     if (!['today', 'week', 'month', 'custom'].includes(scopeRaw)) {
-      return NextResponse.json<ApiResponse>({ success: false, error: 'scope 必須是 today/week/month/custom' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'scope 必須是 today/week/month/custom' }, { status: 400 })
     }
     const scope = scopeRaw as OverviewReport['scope']
 
-    // 解析時間範圍 + 上期對照
     let from: string, to: string, prevFrom: string, prevTo: string, prevLabel: string
 
     if (scope === 'today') {
@@ -101,7 +76,6 @@ export async function GET(req: Request) {
       prevFrom = prevTo = addDays(date, -7)
       prevLabel = '上週同日'
     } else if (scope === 'week') {
-      // 以 date 為基準的「過去 7 天」(含 date)；預設今天
       const d = searchParams.get('date')
       const date = isYMD(d) ? d : todayTW()
       from = addDays(date, -6)
@@ -110,19 +84,16 @@ export async function GET(req: Request) {
       prevTo = addDays(to, -7)
       prevLabel = '上週'
     } else if (scope === 'month') {
-      // 以 year/month 為主，預設當月
       const now = new Date()
       const year = parseInt(searchParams.get('year') ?? String(now.getFullYear()), 10)
       const month = parseInt(searchParams.get('month') ?? String(now.getMonth() + 1), 10)
       if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
-        return NextResponse.json<ApiResponse>({ success: false, error: 'year/month 格式錯誤' }, { status: 400 })
+        return NextResponse.json({ success: false, error: 'year/month 格式錯誤' }, { status: 400 })
       }
       const mm = String(month).padStart(2, '0')
       from = `${year}-${mm}-01`
-      // 月底：下個月 1 號減一天
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
       to = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`
-      // 上個月相同範圍
       const prevYear = month === 1 ? year - 1 : year
       const prevMonth = month === 1 ? 12 : month - 1
       const prevMM = String(prevMonth).padStart(2, '0')
@@ -131,92 +102,74 @@ export async function GET(req: Request) {
       prevTo = `${prevYear}-${prevMM}-${String(prevLastDay).padStart(2, '0')}`
       prevLabel = '上個月'
     } else {
-      // custom
       const f = searchParams.get('from')
       const t = searchParams.get('to')
       if (!isYMD(f) || !isYMD(t)) {
-        return NextResponse.json<ApiResponse>({ success: false, error: 'from / to 格式需為 YYYY-MM-DD' }, { status: 400 })
+        return NextResponse.json({ success: false, error: 'from / to 格式需為 YYYY-MM-DD' }, { status: 400 })
       }
       if (f > t) {
-        return NextResponse.json<ApiResponse>({ success: false, error: 'from 必須早於或等於 to' }, { status: 400 })
+        return NextResponse.json({ success: false, error: 'from 必須早於或等於 to' }, { status: 400 })
       }
       from = f
       to = t
-      // 上期 = 等長度往前推
       const days = Math.floor((Date.parse(to) - Date.parse(from)) / 86400000) + 1
       prevTo = addDays(from, -1)
       prevFrom = addDays(prevTo, -(days - 1))
       prevLabel = '前段同長度'
     }
 
+    // 日期範圍（DATETIME 欄位用 >= 'from 00:00:00' AND < 'to+1 00:00:00'）
+    const fromDT = `${from} 00:00:00`
+    const toDT = `${addDays(to, 1)} 00:00:00`
+    const prevFromDT = `${prevFrom} 00:00:00`
+    const prevToDT = `${addDays(prevTo, 1)} 00:00:00`
+
     // ── Summary ─────────────────
-    const sum = db.prepare(`
+    const [sumRows] = await pool.execute<RowDataPacket[]>(`
       SELECT
-        COUNT(DISTINCT o.order_id)                      AS orders_count,
-        COALESCE(SUM(oi.unit_price * oi.quantity), 0)   AS revenue
-      FROM "order" o
-      LEFT JOIN order_item oi ON o.order_id = oi.order_id
-      WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
-    `).get(from, to) as { orders_count: number; revenue: number }
+        COUNT(DISTINCT o.\`訂單編號\`) AS orders_count,
+        COALESCE(SUM(m.\`餐點價格\` * od.\`數量\`), 0) AS revenue
+      FROM \`訂單\` o
+      LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+      LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+      WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+    `, [fromDT, toDT])
+    const sum = sumRows[0] as { orders_count: number; revenue: number }
 
-    const prevSum = db.prepare(`
-      SELECT COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS revenue
-      FROM "order" o
-      LEFT JOIN order_item oi ON o.order_id = oi.order_id
-      WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
-    `).get(prevFrom, prevTo) as { revenue: number }
+    const [prevSumRows] = await pool.execute<RowDataPacket[]>(`
+      SELECT COALESCE(SUM(m.\`餐點價格\` * od.\`數量\`), 0) AS revenue
+      FROM \`訂單\` o
+      LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+      LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+      WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+    `, [prevFromDT, prevToDT])
+    const prevSum = prevSumRows[0] as { revenue: number }
 
-    // ── 採購成本 ─────────────────
-    // 所有狀態的採購單都計入毛成本，再扣除退貨品項的按比例成本。
-    // 退貨成本 = SUM((return_qty / order_qty) * item_total_cost)
-    const grossCostNow = db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) AS cost
-      FROM purchase_order
-      WHERE po_date BETWEEN ? AND ?
-    `).get(from, to) as { cost: number }
-    const returnedCostNow = db.prepare(`
-      SELECT COALESCE(SUM(
-        CASE WHEN poi.order_qty > 0
-          THEN (r.return_qty * 1.0 / poi.order_qty) * poi.total_cost
-          ELSE 0
-        END
-      ), 0) AS returned_cost
-      FROM return_order r
-      JOIN purchase_order_item poi ON r.po_id = poi.po_id AND r.ingredient_name = poi.ingredient_name
-      JOIN purchase_order po ON r.po_id = po.po_id
-      WHERE po.po_date BETWEEN ? AND ?
-    `).get(from, to) as { returned_cost: number }
-    const costNow = { cost: grossCostNow.cost - returnedCostNow.returned_cost }
+    // ── 採購成本（已下單 + 已到貨，不含已取消）─────────────────
+    const [costRows] = await pool.execute<RowDataPacket[]>(`
+      SELECT COALESCE(SUM(\`進貨食材總成本\`), 0) AS cost
+      FROM \`採購單\`
+      WHERE \`採購單日期\` >= ? AND \`採購單日期\` <= ? AND \`採購單狀態\` IN ('已下單', '已到貨')
+    `, [from, to])
+    const costNow = (costRows[0] as { cost: number }).cost
 
-    const grossCostPrev = db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) AS cost
-      FROM purchase_order
-      WHERE po_date BETWEEN ? AND ?
-    `).get(prevFrom, prevTo) as { cost: number }
-    const returnedCostPrev = db.prepare(`
-      SELECT COALESCE(SUM(
-        CASE WHEN poi.order_qty > 0
-          THEN (r.return_qty * 1.0 / poi.order_qty) * poi.total_cost
-          ELSE 0
-        END
-      ), 0) AS returned_cost
-      FROM return_order r
-      JOIN purchase_order_item poi ON r.po_id = poi.po_id AND r.ingredient_name = poi.ingredient_name
-      JOIN purchase_order po ON r.po_id = po.po_id
-      WHERE po.po_date BETWEEN ? AND ?
-    `).get(prevFrom, prevTo) as { returned_cost: number }
-    const costPrev = { cost: grossCostPrev.cost - returnedCostPrev.returned_cost }
+    const [prevCostRows] = await pool.execute<RowDataPacket[]>(`
+      SELECT COALESCE(SUM(\`進貨食材總成本\`), 0) AS cost
+      FROM \`採購單\`
+      WHERE \`採購單日期\` >= ? AND \`採購單日期\` <= ? AND \`採購單狀態\` IN ('已下單', '已到貨')
+    `, [prevFrom, prevTo])
+    const prevCostVal = (prevCostRows[0] as { cost: number }).cost
 
-    const revenue = Math.round(sum.revenue)
-    const prev_revenue = Math.round(prevSum.revenue)
-    const cost = Math.round(costNow.cost)
-    const prev_cost = Math.round(costPrev.cost)
+    const revenue = Math.round(Number(sum.revenue))
+    const prev_revenue = Math.round(Number(prevSum.revenue))
+    const cost = Math.round(Number(costNow))
+    const prev_cost = Math.round(Number(prevCostVal))
     const profit = revenue - cost
     const prev_profit = prev_revenue - prev_cost
     const summary: SummaryBlock = {
       revenue,
-      orders_count: sum.orders_count,
-      avg_per_order: sum.orders_count > 0 ? Math.round(revenue / sum.orders_count) : 0,
+      orders_count: Number(sum.orders_count),
+      avg_per_order: Number(sum.orders_count) > 0 ? Math.round(revenue / Number(sum.orders_count)) : 0,
       prev_revenue,
       prev_label: prevLabel,
       change_pct: pct(revenue, prev_revenue),
@@ -230,41 +183,44 @@ export async function GET(req: Request) {
     // ── Timeseries ─────────────────
     let timeseries: SeriesPoint[] = []
     if (scope === 'today') {
-      // 24 小時桶
-      const hourly = db.prepare(`
+      const [hourlyRows] = await pool.execute<RowDataPacket[]>(`
         SELECT
-          substr(o.created_at, 12, 2)                   AS hour,
-          COUNT(DISTINCT o.order_id)                    AS orders_count,
-          COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS revenue
-        FROM "order" o
-        LEFT JOIN order_item oi ON o.order_id = oi.order_id
-        WHERE o.order_date = ? AND o.status = '已完成'
-        GROUP BY substr(o.created_at, 12, 2)
-      `).all(from) as Array<{ hour: string; orders_count: number; revenue: number }>
-      const byHour = new Map(hourly.map(r => [r.hour, r]))
+          LPAD(HOUR(o.\`訂單日期\`), 2, '0') AS hour_bucket,
+          COUNT(DISTINCT o.\`訂單編號\`) AS orders_count,
+          COALESCE(SUM(m.\`餐點價格\` * od.\`數量\`), 0) AS revenue
+        FROM \`訂單\` o
+        LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+        LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+        WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+        GROUP BY hour_bucket
+      `, [fromDT, toDT])
+      const byHour = new Map((hourlyRows as Array<{ hour_bucket: string; orders_count: number; revenue: number }>).map(r => [r.hour_bucket, r]))
       for (let h = 0; h < 24; h++) {
         const k = String(h).padStart(2, '0')
         const row = byHour.get(k)
         timeseries.push({
           bucket: k,
-          revenue: row ? Math.round(row.revenue) : 0,
-          orders_count: row ? row.orders_count : 0,
+          revenue: row ? Math.round(Number(row.revenue)) : 0,
+          orders_count: row ? Number(row.orders_count) : 0,
         })
       }
     } else {
-      // 日彙總，from..to 每天都產一筆（沒交易也補 0）
-      const daily = db.prepare(`
+      const [dailyRows] = await pool.execute<RowDataPacket[]>(`
         SELECT
-          o.order_date                                  AS bucket,
-          COUNT(DISTINCT o.order_id)                    AS orders_count,
-          COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS revenue
-        FROM "order" o
-        LEFT JOIN order_item oi ON o.order_id = oi.order_id
-        WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
-        GROUP BY o.order_date
-      `).all(from, to) as Array<{ bucket: string; orders_count: number; revenue: number }>
-      const byDay = new Map(daily.map(r => [r.bucket, r]))
-      // 不要畫到未來日：custom 以外的 scope 截到今天為止；custom 尊重 user 輸入
+          DATE(o.\`訂單日期\`) AS bucket,
+          COUNT(DISTINCT o.\`訂單編號\`) AS orders_count,
+          COALESCE(SUM(m.\`餐點價格\` * od.\`數量\`), 0) AS revenue
+        FROM \`訂單\` o
+        LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+        LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+        WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+        GROUP BY bucket
+        ORDER BY bucket
+      `, [fromDT, toDT])
+      const byDay = new Map((dailyRows as Array<{ bucket: string; orders_count: number; revenue: number }>).map(r => {
+        const b = typeof r.bucket === 'string' ? r.bucket.slice(0, 10) : new Date(r.bucket).toISOString().slice(0, 10)
+        return [b, r]
+      }))
       const today = todayTW()
       const effectiveTo = (scope === 'custom') ? to : (to > today ? today : to)
       let cursor = from
@@ -272,8 +228,8 @@ export async function GET(req: Request) {
         const row = byDay.get(cursor)
         timeseries.push({
           bucket: cursor,
-          revenue: row ? Math.round(row.revenue) : 0,
-          orders_count: row ? row.orders_count : 0,
+          revenue: row ? Math.round(Number(row.revenue)) : 0,
+          orders_count: row ? Number(row.orders_count) : 0,
         })
         cursor = addDays(cursor, 1)
       }
@@ -281,47 +237,53 @@ export async function GET(req: Request) {
 
     // ── Top items ─────────────────
     const limit = scope === 'today' || scope === 'week' ? 5 : 10
-    const topRows = db.prepare(`
+    const [topRows] = await pool.execute<RowDataPacket[]>(`
       SELECT
-        mi.name,
-        SUM(oi.quantity)                  AS qty,
-        SUM(oi.unit_price * oi.quantity)  AS revenue
-      FROM "order" o
-      JOIN order_item oi ON o.order_id = oi.order_id
-      JOIN menu_item mi  ON oi.item_id  = mi.item_id
-      WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
-      GROUP BY mi.item_id, mi.name
+        m.\`餐點名稱\` AS name,
+        SUM(od.\`數量\`) AS qty,
+        SUM(m.\`餐點價格\` * od.\`數量\`) AS revenue
+      FROM \`訂單\` o
+      JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+      JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+      WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+      GROUP BY m.\`餐點編號\`, m.\`餐點名稱\`
       ORDER BY qty DESC
-      LIMIT ?
-    `).all(from, to, limit) as Array<{ name: string; qty: number; revenue: number }>
+      LIMIT ${limit}
+    `, [fromDT, toDT])
 
-    const top_items: TopItem[] = topRows.map(r => ({
+    const top_items: TopItem[] = (topRows as Array<{ name: string; qty: number; revenue: number }>).map(r => ({
       name: r.name,
       qty: Number(r.qty),
-      revenue: Math.round(r.revenue),
+      revenue: Math.round(Number(r.revenue)),
     }))
 
-    // ── KPI sparkline：最近 14 天日營收與訂單數（含今天回推 13 天） ─────
+    // ── KPI sparkline：最近 14 天 ─────
     const sparkTo = todayTW()
     const sparkFrom = addDays(sparkTo, -13)
-    const sparkRows = db.prepare(`
+    const sparkFromDT = `${sparkFrom} 00:00:00`
+    const sparkToDT = `${addDays(sparkTo, 1)} 00:00:00`
+    const [sparkRows] = await pool.execute<RowDataPacket[]>(`
       SELECT
-        o.order_date                                  AS bucket,
-        COUNT(DISTINCT o.order_id)                    AS orders_count,
-        COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS revenue
-      FROM "order" o
-      LEFT JOIN order_item oi ON o.order_id = oi.order_id
-      WHERE o.order_date BETWEEN ? AND ? AND o.status = '已完成'
-      GROUP BY o.order_date
-    `).all(sparkFrom, sparkTo) as Array<{ bucket: string; orders_count: number; revenue: number }>
-    const sparkMap = new Map(sparkRows.map(r => [r.bucket, r]))
+        DATE(o.\`訂單日期\`) AS bucket,
+        COUNT(DISTINCT o.\`訂單編號\`) AS orders_count,
+        COALESCE(SUM(m.\`餐點價格\` * od.\`數量\`), 0) AS revenue
+      FROM \`訂單\` o
+      LEFT JOIN \`訂單明細\` od ON o.\`訂單編號\` = od.\`訂單編號\`
+      LEFT JOIN \`餐點\` m ON od.\`餐點編號\` = m.\`餐點編號\`
+      WHERE o.\`訂單日期\` >= ? AND o.\`訂單日期\` < ? AND o.\`訂單狀態\` = '已完成'
+      GROUP BY bucket
+    `, [sparkFromDT, sparkToDT])
+    const sparkMap = new Map((sparkRows as Array<{ bucket: string; orders_count: number; revenue: number }>).map(r => {
+      const b = typeof r.bucket === 'string' ? r.bucket.slice(0, 10) : new Date(r.bucket).toISOString().slice(0, 10)
+      return [b, r]
+    }))
     const kpi_trend_revenue: number[] = []
     const kpi_trend_orders: number[] = []
     let sparkCursor = sparkFrom
     while (sparkCursor <= sparkTo) {
       const row = sparkMap.get(sparkCursor)
-      kpi_trend_revenue.push(row ? Math.round(row.revenue) : 0)
-      kpi_trend_orders.push(row ? row.orders_count : 0)
+      kpi_trend_revenue.push(row ? Math.round(Number(row.revenue)) : 0)
+      kpi_trend_orders.push(row ? Number(row.orders_count) : 0)
       sparkCursor = addDays(sparkCursor, 1)
     }
 
@@ -335,11 +297,11 @@ export async function GET(req: Request) {
       kpi_trend_orders,
     }
 
-    return NextResponse.json<ApiResponse<OverviewReport>>({ success: true, data: report }, { status: 200 })
+    return NextResponse.json({ success: true, data: report })
   } catch (err) {
     console.error('[GET /api/reports/overview]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : '伺服器錯誤' },
       { status: 500 }
     )
   }

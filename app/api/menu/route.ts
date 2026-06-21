@@ -1,161 +1,118 @@
-// app/api/menu/route.ts
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getPool } from '@/lib/db'
+import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
-// ============================================================
-// 型別定義
-// ============================================================
-interface MenuItem {
-  item_id: number
-  name: string
-  category: string
-  price: number
-  emoji: string
-  tag: string
-  sub: string
-  option: string
-  description: string
-  is_active: number
-  image_url: string
-  addons: { id: string; label: string; price: number }[]  // 解析後的
+interface MenuItemRow extends RowDataPacket {
+  餐點編號: number
+  餐點名稱: string
+  餐點分類: string
+  餐點價格: number
+  圖示: string
+  分類標籤: string
+  餐點描述: string
+  上下架狀態: number
+  圖片網址: string
+  客製化屬性: string
 }
 
-interface MenuItemRow extends Omit<MenuItem, 'addons'> {
-  addons: string  // DB 直接拿是 JSON 字串
+function parseAddons(raw: string | null): Array<{ id: string; label: string; price: number }> {
+  try {
+    const p = JSON.parse(raw ?? '[]')
+    return Array.isArray(p) ? p : []
+  } catch { return [] }
 }
 
-interface CreateMenuBody {
-  name: string
-  category: string
-  price: number
-  emoji?: string
-  tag?: string
-  sub?: string
-  option?: string
-  description?: string
-  is_active?: number
-  image_url?: string
-}
-
-interface ApiResponse<T = unknown> {
-  success: boolean
-  error?: string
-  data?: T
-}
-
-// ============================================================
-// GET /api/menu — 查詢全部（可依分類篩選）
-// query：
-//   category=...        — 依分類篩選
-//   include_inactive=1  — 連同已下架品項一併回傳
-// ============================================================
 export async function GET(req: Request) {
   try {
-    const db = getDb()
+    const pool = getPool()
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
     const includeInactive = searchParams.get('include_inactive') === '1'
 
     const conditions: string[] = []
-    const params: string[] = []
+    const params: (string | number)[] = []
 
     if (!includeInactive) {
-      conditions.push('is_active = 1')
+      conditions.push('`上下架狀態` = 1')
     }
     if (category) {
-      conditions.push('category = ?')
+      conditions.push('`餐點分類` = ?')
       params.push(category)
     }
 
-    const whereClause = conditions.length > 0
-      ? `WHERE ${conditions.join(' AND ')}`
-      : ''
-    const orderClause = category
-      ? 'ORDER BY item_id'
-      : 'ORDER BY category, item_id'
+    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+    const order = category ? 'ORDER BY `餐點編號`' : 'ORDER BY `餐點分類`, `餐點編號`'
 
-    const sql = `
-      SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url, addons
-      FROM menu_item
-      ${whereClause}
-      ${orderClause}
-    `
+    const [rows] = await pool.execute<MenuItemRow[]>(
+      `SELECT \`餐點編號\`, \`餐點名稱\`, \`餐點分類\`, \`餐點價格\`, \`圖示\`, \`分類標籤\`, \`餐點描述\`, \`上下架狀態\`, \`圖片網址\`, \`客製化屬性\`
+       FROM \`餐點\` ${where} ${order}`,
+      params
+    )
 
-    const rows = db.prepare(sql).all(...params) as MenuItemRow[]
-    const menu: MenuItem[] = rows.map(r => ({
-      ...r,
-      addons: (() => {
-        try {
-          const p = JSON.parse(r.addons ?? '[]')
-          return Array.isArray(p) ? p : []
-        } catch { return [] }
-      })(),
+    const data = rows.map(r => ({
+      餐點編號: r.餐點編號,
+      餐點名稱: r.餐點名稱,
+      餐點分類: r.餐點分類,
+      餐點價格: r.餐點價格,
+      圖示: r.圖示,
+      分類標籤: r.分類標籤,
+      餐點描述: r.餐點描述,
+      上下架狀態: r.上下架狀態,
+      圖片網址: r.圖片網址,
+      客製化屬性: parseAddons(r.客製化屬性),
     }))
-    return NextResponse.json<ApiResponse<MenuItem[]>>({ success: true, data: menu })
+
+    return NextResponse.json({ success: true, data })
   } catch (err) {
     console.error('[GET /api/menu]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }
 
-// ============================================================
-// POST /api/menu — 新增品項
-// ============================================================
 export async function POST(req: Request) {
   try {
-    const body: CreateMenuBody = await req.json()
+    const body = await req.json()
 
-    if (!body.name || !body.category || body.price === undefined) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: 'name、category、price 為必填欄位' },
+    const name = (body.餐點名稱 ?? '').trim()
+    const category = (body.餐點分類 ?? '').trim()
+    const price = body.餐點價格
+
+    if (!name || !category || price === undefined) {
+      return NextResponse.json(
+        { success: false, error: '餐點名稱、餐點分類、餐點價格 為必填' },
         { status: 400 }
       )
     }
 
-    const db = getDb()
-    const stmt = db.prepare(`
-      INSERT INTO menu_item (name, category, price, emoji, tag, sub, option, description, is_active, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    const result = stmt.run(
-      body.name,
-      body.category,
-      body.price,
-      body.emoji ?? '',
-      body.tag ?? '其他',
-      body.sub ?? '',
-      body.option ?? '',
-      body.description ?? '',
-      body.is_active ?? 1,
-      body.image_url ?? ''
+    const pool = getPool()
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO \`餐點\` (\`餐點名稱\`, \`餐點分類\`, \`餐點價格\`, \`圖示\`, \`分類標籤\`, \`餐點描述\`, \`上下架狀態\`, \`圖片網址\`, \`客製化屬性\`)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name,
+        category,
+        price,
+        body.圖示 ?? '',
+        body.分類標籤 ?? '其他',
+        body.餐點描述 ?? '',
+        body.上下架狀態 ?? 1,
+        body.圖片網址 ?? '',
+        JSON.stringify(body.客製化屬性 ?? []),
+      ]
     )
 
-    const row = db.prepare(
-      'SELECT item_id, name, category, price, emoji, tag, sub, option, description, is_active, image_url, addons FROM menu_item WHERE item_id = ?'
-    ).get(result.lastInsertRowid) as MenuItemRow
-    const newItem: MenuItem = {
-      ...row,
-      addons: (() => {
-        try {
-          const p = JSON.parse(row.addons ?? '[]')
-          return Array.isArray(p) ? p : []
-        } catch { return [] }
-      })(),
-    }
-
-    return NextResponse.json<ApiResponse<MenuItem>>(
-      { success: true, data: newItem },
-      { status: 201 }
+    const [rows] = await pool.execute<MenuItemRow[]>(
+      'SELECT `餐點編號`, `餐點名稱`, `餐點分類`, `餐點價格`, `圖示`, `分類標籤`, `餐點描述`, `上下架狀態`, `圖片網址`, `客製化屬性` FROM `餐點` WHERE `餐點編號` = ?',
+      [result.insertId]
     )
+
+    const r = rows[0]
+    return NextResponse.json({
+      success: true,
+      data: { ...r, 客製化屬性: parseAddons(r.客製化屬性) },
+    }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/menu]', err)
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: err instanceof Error ? err.message : '未知錯誤' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: '伺服器錯誤' }, { status: 500 })
   }
 }

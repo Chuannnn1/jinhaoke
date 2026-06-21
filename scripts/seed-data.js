@@ -1,14 +1,9 @@
-// scripts/seed-data.js
-// 金濠客 POS 系統 — 預設 seed 資料 + 寫入邏輯
+// scripts/seed-data.js — MySQL version (schema v4 中文版)
+// Seed data + insert logic (idempotent — only inserts into empty tables)
 //
-// 設計：
-//   - 每張表都做 COUNT 檢查，只在空表時插入（idempotent）
-//   - menu_item 用 name 查回 item_id 再 seed recipe（不依賴 AUTOINCREMENT 順序）
-//   - 可被 scripts/init-db.js 或 lib/db.ts 呼叫
-//
-// 使用：
+// Usage:
 //   const { seedAll } = require('./seed-data')
-//   seedAll(db)   // db 是 better-sqlite3 instance
+//   await seedAll(conn)   // conn is a mysql2/promise connection
 
 const SUPPLIERS = [
   { name: '海鮮批發工', phone: '05-2200001' },
@@ -18,32 +13,26 @@ const SUPPLIERS = [
   { name: '蔬果行',     phone: '05-2200005' },
 ]
 
-// ingredient: [name, stock_qty, safety_stock, stock_unit, order_unit, qty_per_order_unit, supplier_name]
+// [食材名稱, 庫存數量, 安全存量, 庫存單位, 供應商名稱]
 const INGREDIENTS = [
-  ['魚排',       30, 15, '片',   '箱', 60, '海鮮批發工'],
-  ['豬排',       45, 20, '片',   '箱', 60, '肉品大王'],
-  ['帶骨排骨',   32, 15, '片',   '箱', 65, '大成肉品'],
-  ['紅麴豬',     28, 15, '份',   '包', 20, '肉品大王'],
-  ['炸排骨',     8,  10, '份',   '包', 15, '大成肉品'],
-  ['酥嫩雞腿',   22, 10, '隻',   '包', 10, '肉品大王'],
-  ['滷雞腿',     15, 10, '隻',   '包', 15, '大成肉品'],
-  ['牛肉',       60, 30, 'kg',   '包', 2,  '肉品大王'],
-  ['豬肉',       50, 30, 'kg',   '包', 2,  '肉品大王'],
-  ['沙茶雞',     6,  4,  'kg',   '盒', 1,  '肉品大王'],
-  ['白米',       80, 30, '公斤', '包', 25, '糧油行'],
-  ['高麗菜',     30, 8,  '顆',   '箱', 10, '蔬果行'],
-  ['豬腳',       25, 10, '隻',   '包', 5,  '大成肉品'],
-  ['滷蛋',       60, 30, '顆',   '盒', 30, '大成肉品'],
-  ['湯品',       20, 10, '份',   '鍋', 10, '糧油行'],
-  ['菜脯',       40, 20, '份',   '包', 50, '糧油行'],
+  ['魚排',       30, 15, '片',   '海鮮批發工'],
+  ['豬排',       45, 20, '片',   '肉品大王'],
+  ['帶骨排骨',   32, 15, '片',   '大成肉品'],
+  ['紅麴豬',     28, 15, '份',   '肉品大王'],
+  ['炸排骨',     8,  10, '份',   '大成肉品'],
+  ['酥嫩雞腿',   22, 10, '隻',   '肉品大王'],
+  ['滷雞腿',     15, 10, '隻',   '大成肉品'],
+  ['牛肉',       60, 30, 'kg',   '肉品大王'],
+  ['豬肉',       50, 30, 'kg',   '肉品大王'],
+  ['沙茶雞',     6,  4,  'kg',   '肉品大王'],
+  ['白米',       80, 30, '公斤', '糧油行'],
+  ['高麗菜',     30, 8,  '顆',   '蔬果行'],
+  ['豬腳',       25, 10, '隻',   '大成肉品'],
+  ['滷蛋',       60, 30, '顆',   '大成肉品'],
+  ['湯品',       20, 10, '份',   '糧油行'],
+  ['菜脯',       40, 20, '份',   '糧油行'],
 ]
 
-// menu_item: { name, category, price, emoji, tag, sub, option, description, image_url, addons }
-// item_id 由 AUTOINCREMENT 自動產生，recipe 透過 name → item_id 對應
-// image_url 對應 public/uploads/menu/ 底下的 webp
-// addons：客製化選項（JSON）— 只有手作便當 1-8 + 燴飯 9-11 有，其他都空 []
-//   addon shape: { id: string, label: string, price: number }
-//   stable id：extra_meat / extra_veg / extra_rice（給 reports 用）；label 在不同品項可不同
 const ADDONS_BENTO_RICE = [
   { id: 'extra_rice', label: '加飯', price: 10 },
 ]
@@ -57,54 +46,42 @@ const sauceAddons = (meatLabel, meatPrice) => ([
   { id: 'extra_rice', label: '加飯', price: 10 },
 ])
 
+// description = 原 sub + option + description 合併
 const MENU_ITEMS = [
-  // 便當（加肉用對應單點價，加飯固定 10）
-  { name: '大比目魚排便當',  category: '手作便當', price: 130, emoji: '🐟', tag: '魚',   sub: '扁鱈',         option: '加魚排100 / 加飯10', description: '扁鱈魚排配三樣配菜',         image_url: '/uploads/menu/青甘魚排手作便當.webp',                addons: bentoAddons('加魚排',   100) },
-  { name: '酥炸豬排便當',    category: '手作便當', price: 130, emoji: '🐷', tag: '豬',   sub: '',             option: '加豬排100 / 加飯10', description: '酥炸厚切豬排配三樣配菜',     image_url: '/uploads/menu/炸豬排手作便當.webp',                  addons: bentoAddons('加豬排',   100) },
-  { name: '酥嫩雞腿便當',    category: '手作便當', price: 130, emoji: '🍗', tag: '雞',   sub: '',             option: '加雞腿100 / 加飯10', description: '酥嫩雞腿配三樣配菜',         image_url: '/uploads/menu/炸雞腿手作便當.webp',                  addons: bentoAddons('加雞腿',   100) },
-  { name: '紅麴豬五花便當',  category: '手作便當', price: 120, emoji: '🐷', tag: '豬',   sub: '',             option: '加豬五花90 / 加飯10', description: '紅麴豬五花配三樣配菜',       image_url: '/uploads/menu/紅麴豬手作便當.webp',                  addons: bentoAddons('加豬五花',  90) },
-  { name: '酥炸排骨便當',    category: '手作便當', price: 100, emoji: '🐷', tag: '豬',   sub: '無骨',         option: '加排骨70 / 加飯10', description: '無骨酥炸排骨配三樣配菜',     image_url: '/uploads/menu/炸排骨手作便當.webp',                  addons: bentoAddons('加排骨',    70) },
-  { name: '滷豬腳便當',      category: '手作便當', price: 100, emoji: '🐷', tag: '豬',   sub: '',             option: '加飯10',          description: '滷豬腳配三樣配菜',           image_url: '', is_active: 0,                                       addons: ADDONS_BENTO_RICE },
-  { name: '滷雞腿便當',      category: '手作便當', price: 100, emoji: '🍗', tag: '雞',   sub: '',             option: '加滷雞腿70 / 加飯10', description: '滷雞腿配三樣配菜',           image_url: '/uploads/menu/滷雞腿手作便當.webp',                  addons: bentoAddons('加滷雞腿',  70) },
-  { name: '滷排骨便當',      category: '手作便當', price: 100, emoji: '🥚', tag: '豬',   sub: '帶骨·附滷蛋',  option: '加滷排骨80 / 加飯10', description: '帶骨滷排骨附滷蛋配三樣配菜', image_url: '/uploads/menu/滷排骨手作便當.webp',                  addons: bentoAddons('加滷排骨',  80) },
-
-  // 燴飯（加菜+10、加肉照原訂價、加飯+10）
-  { name: '沙茶牛肉燴飯',    category: '燴飯',     price: 110, emoji: '🥩', tag: '牛',   sub: '',             option: '加菜10 / 加牛60 / 加飯10', description: '沙茶牛肉', image_url: '/uploads/menu/沙茶牛肉燴飯.webp',  addons: sauceAddons('加牛', 60) },
-  { name: '沙茶雞柳燴飯',    category: '燴飯',     price: 110, emoji: '🍗', tag: '雞',   sub: '',             option: '加菜10 / 加雞60 / 加飯10', description: '沙茶雞柳', image_url: '/uploads/menu/沙茶雞柳燴飯.webp', addons: sauceAddons('加雞', 60) },
-  { name: '沙茶豬肉燴飯',    category: '燴飯',     price: 100, emoji: '🐷', tag: '豬',   sub: '',             option: '加菜10 / 加豬50 / 加飯10', description: '沙茶豬肉', image_url: '/uploads/menu/沙茶豬肉燴飯.webp', addons: sauceAddons('加豬', 50) },
-
-  // 單點（統一用對應的 手作便當 / 燴飯 照片）
-  { name: '大比目魚排',      category: '單點',     price: 100, emoji: '🐟', tag: '魚',   sub: '扁鱈',         option: '',                description: '扁鱈魚排',                   image_url: '/uploads/menu/青甘魚排手作便當.webp' },
-  { name: '酥炸豬排',        category: '單點',     price: 100, emoji: '🐷', tag: '豬',   sub: '',             option: '',                description: '酥炸厚切豬排',               image_url: '/uploads/menu/炸豬排手作便當.webp' },
-  { name: '酥嫩雞腿',        category: '單點',     price: 100, emoji: '🍗', tag: '雞',   sub: '',             option: '',                description: '酥嫩雞腿',                   image_url: '/uploads/menu/炸雞腿手作便當.webp' },
-  { name: '紅麴豬五花',      category: '單點',     price: 90,  emoji: '🐷', tag: '豬',   sub: '',             option: '',                description: '紅麴豬五花',                 image_url: '/uploads/menu/紅麴豬手作便當.webp' },
-  { name: '沙茶燴牛肉',      category: '單點',     price: 90,  emoji: '🥩', tag: '牛',   sub: '',             option: '加肉60 / 加菜10', description: '沙茶燴牛肉',                 image_url: '/uploads/menu/沙茶牛肉燴飯.webp' },
-  { name: '滷排骨',          category: '單點',     price: 80,  emoji: '🐷', tag: '豬',   sub: '二片',         option: '',                description: '二片',                       image_url: '/uploads/menu/滷排骨手作便當.webp' },
-  { name: '沙茶燴豬肉',      category: '單點',     price: 80,  emoji: '🐷', tag: '豬',   sub: '',             option: '加肉50 / 加菜10', description: '沙茶燴豬肉',                 image_url: '/uploads/menu/沙茶豬肉燴飯.webp' },
-  { name: '酥炸排骨',        category: '單點',     price: 70,  emoji: '🐷', tag: '豬',   sub: '無骨',         option: '',                description: '無骨',                       image_url: '/uploads/menu/炸排骨手作便當.webp' },
-  { name: '滷雞腿',          category: '單點',     price: 70,  emoji: '🍗', tag: '雞',   sub: '',             option: '',                description: '滷雞腿',                     image_url: '/uploads/menu/滷雞腿手作便當.webp' },
-  { name: '季節炒時蔬',      category: '單點',     price: 60,  emoji: '🥬', tag: '其他', sub: '',             option: '',                description: '時令蔬菜',                   image_url: '/uploads/menu/單點 - 季節時蔬.webp' },
-  { name: '白飯',            category: '單點',     price: 20,  emoji: '🍚', tag: '其他', sub: '',             option: '',                description: '白飯',                       image_url: '/uploads/menu/單點 - 白飯.webp' },
-  { name: '滷蛋',            category: '單點',     price: 15,  emoji: '🥚', tag: '其他', sub: '',             option: '',                description: '滷蛋',                       image_url: '/uploads/menu/單點 - 滷蛋.webp' },
-  { name: '加購湯品',        category: '單點',     price: 10,  emoji: '🍜', tag: '其他', sub: '',             option: '',                description: '例湯',                       image_url: '/uploads/menu/單點 - 加購湯品.webp' },
-  { name: '加購菜脯',        category: '單點',     price: 5,   emoji: '🥢', tag: '其他', sub: '原味/辣味',    option: '',                description: '原味/辣味',                  image_url: '/uploads/menu/單點  - 菜脯.webp' },
-
-  // ──────────────────────────────────────────
-  // 26+：加購 / 配對 沙茶燴 系列
-  //   POS code 26-31 對齊 CSV 匯入；統一放 單點 類別、上架，圖片沿用主菜 webp
-  // ──────────────────────────────────────────
-  { name: '沙茶燴雞肉',      category: '單點',     price: 90,  emoji: '🍗', tag: '雞',   sub: '',             option: '加肉60 / 加菜10', description: '沙茶燴雞肉',                 image_url: '/uploads/menu/沙茶雞柳燴飯.webp' },
-  { name: '加菜',            category: '單點',     price: 10,  emoji: '🥬', tag: '其他', sub: '',             option: '',                description: '燴飯加菜',                   image_url: '/uploads/menu/單點 - 季節時蔬.webp' },
-  { name: '加牛',            category: '單點',     price: 60,  emoji: '🥩', tag: '牛',   sub: '',             option: '',                description: '燴飯加牛',                   image_url: '/uploads/menu/沙茶牛肉燴飯.webp' },
-  { name: '加豬',            category: '單點',     price: 50,  emoji: '🐷', tag: '豬',   sub: '',             option: '',                description: '燴飯加豬',                   image_url: '/uploads/menu/沙茶豬肉燴飯.webp' },
-  { name: '加雞',            category: '單點',     price: 60,  emoji: '🍗', tag: '雞',   sub: '',             option: '',                description: '燴飯加雞',                   image_url: '/uploads/menu/沙茶雞柳燴飯.webp' },
-  { name: '加飯',            category: '單點',     price: 10,  emoji: '🍚', tag: '其他', sub: '',             option: '',                description: '加一份白飯',                 image_url: '/uploads/menu/單點 - 白飯.webp' },
+  { name: '大比目魚排便當',  category: '手作便當', price: 130, emoji: '🐟', tag: '魚',   description: '扁鱈魚排配三樣配菜',         image_url: '/uploads/menu/青甘魚排手作便當.webp',                addons: bentoAddons('加魚排',   100) },
+  { name: '酥炸豬排便當',    category: '手作便當', price: 130, emoji: '🐷', tag: '豬',   description: '酥炸厚切豬排配三樣配菜',     image_url: '/uploads/menu/炸豬排手作便當.webp',                  addons: bentoAddons('加豬排',   100) },
+  { name: '酥嫩雞腿便當',    category: '手作便當', price: 130, emoji: '🍗', tag: '雞',   description: '酥嫩雞腿配三樣配菜',         image_url: '/uploads/menu/炸雞腿手作便當.webp',                  addons: bentoAddons('加雞腿',   100) },
+  { name: '紅麴豬五花便當',  category: '手作便當', price: 120, emoji: '🐷', tag: '豬',   description: '紅麴豬五花配三樣配菜',       image_url: '/uploads/menu/紅麴豬手作便當.webp',                  addons: bentoAddons('加豬五花',  90) },
+  { name: '酥炸排骨便當',    category: '手作便當', price: 100, emoji: '🐷', tag: '豬',   description: '無骨酥炸排骨配三樣配菜',     image_url: '/uploads/menu/炸排骨手作便當.webp',                  addons: bentoAddons('加排骨',    70) },
+  { name: '滷豬腳便當',      category: '手作便當', price: 100, emoji: '🐷', tag: '豬',   description: '滷豬腳配三樣配菜',           image_url: '', is_active: 0,                                       addons: ADDONS_BENTO_RICE },
+  { name: '滷雞腿便當',      category: '手作便當', price: 100, emoji: '🍗', tag: '雞',   description: '滷雞腿配三樣配菜',           image_url: '/uploads/menu/滷雞腿手作便當.webp',                  addons: bentoAddons('加滷雞腿',  70) },
+  { name: '滷排骨便當',      category: '手作便當', price: 100, emoji: '🥚', tag: '豬',   description: '帶骨滷排骨附滷蛋配三樣配菜', image_url: '/uploads/menu/滷排骨手作便當.webp',                  addons: bentoAddons('加滷排骨',  80) },
+  { name: '沙茶牛肉燴飯',    category: '燴飯',     price: 110, emoji: '🥩', tag: '牛',   description: '沙茶牛肉',                   image_url: '/uploads/menu/沙茶牛肉燴飯.webp',                    addons: sauceAddons('加牛', 60) },
+  { name: '沙茶雞柳燴飯',    category: '燴飯',     price: 110, emoji: '🍗', tag: '雞',   description: '沙茶雞柳',                   image_url: '/uploads/menu/沙茶雞柳燴飯.webp',                    addons: sauceAddons('加雞', 60) },
+  { name: '沙茶豬肉燴飯',    category: '燴飯',     price: 100, emoji: '🐷', tag: '豬',   description: '沙茶豬肉',                   image_url: '/uploads/menu/沙茶豬肉燴飯.webp',                    addons: sauceAddons('加豬', 50) },
+  { name: '大比目魚排',      category: '單點',     price: 100, emoji: '🐟', tag: '魚',   description: '扁鱈魚排',                   image_url: '/uploads/menu/青甘魚排手作便當.webp' },
+  { name: '酥炸豬排',        category: '單點',     price: 100, emoji: '🐷', tag: '豬',   description: '酥炸厚切豬排',               image_url: '/uploads/menu/炸豬排手作便當.webp' },
+  { name: '酥嫩雞腿',        category: '單點',     price: 100, emoji: '🍗', tag: '雞',   description: '酥嫩雞腿',                   image_url: '/uploads/menu/炸雞腿手作便當.webp' },
+  { name: '紅麴豬五花',      category: '單點',     price: 90,  emoji: '🐷', tag: '豬',   description: '紅麴豬五花',                 image_url: '/uploads/menu/紅麴豬手作便當.webp' },
+  { name: '沙茶燴牛肉',      category: '單點',     price: 90,  emoji: '🥩', tag: '牛',   description: '沙茶燴牛肉',                 image_url: '/uploads/menu/沙茶牛肉燴飯.webp' },
+  { name: '滷排骨',          category: '單點',     price: 80,  emoji: '🐷', tag: '豬',   description: '二片',                       image_url: '/uploads/menu/滷排骨手作便當.webp' },
+  { name: '沙茶燴豬肉',      category: '單點',     price: 80,  emoji: '🐷', tag: '豬',   description: '沙茶燴豬肉',                 image_url: '/uploads/menu/沙茶豬肉燴飯.webp' },
+  { name: '酥炸排骨',        category: '單點',     price: 70,  emoji: '🐷', tag: '豬',   description: '無骨',                       image_url: '/uploads/menu/炸排骨手作便當.webp' },
+  { name: '滷雞腿',          category: '單點',     price: 70,  emoji: '🍗', tag: '雞',   description: '滷雞腿',                     image_url: '/uploads/menu/滷雞腿手作便當.webp' },
+  { name: '季節炒時蔬',      category: '單點',     price: 60,  emoji: '🥬', tag: '其他', description: '時令蔬菜',                   image_url: '/uploads/menu/單點 - 季節時蔬.webp' },
+  { name: '白飯',            category: '單點',     price: 20,  emoji: '🍚', tag: '其他', description: '白飯',                       image_url: '/uploads/menu/單點 - 白飯.webp' },
+  { name: '滷蛋',            category: '單點',     price: 15,  emoji: '🥚', tag: '其他', description: '滷蛋',                       image_url: '/uploads/menu/單點 - 滷蛋.webp' },
+  { name: '加購湯品',        category: '單點',     price: 10,  emoji: '🍜', tag: '其他', description: '例湯',                       image_url: '/uploads/menu/單點 - 加購湯品.webp' },
+  { name: '加購菜脯',        category: '單點',     price: 5,   emoji: '🥢', tag: '其他', description: '原味/辣味',                  image_url: '/uploads/menu/單點  - 菜脯.webp' },
+  { name: '沙茶燴雞肉',      category: '單點',     price: 90,  emoji: '🍗', tag: '雞',   description: '沙茶燴雞肉',                 image_url: '/uploads/menu/沙茶雞柳燴飯.webp' },
+  { name: '加菜',            category: '單點',     price: 10,  emoji: '🥬', tag: '其他', description: '燴飯加菜',                   image_url: '/uploads/menu/單點 - 季節時蔬.webp' },
+  { name: '加牛',            category: '單點',     price: 60,  emoji: '🥩', tag: '牛',   description: '燴飯加牛',                   image_url: '/uploads/menu/沙茶牛肉燴飯.webp' },
+  { name: '加豬',            category: '單點',     price: 50,  emoji: '🐷', tag: '豬',   description: '燴飯加豬',                   image_url: '/uploads/menu/沙茶豬肉燴飯.webp' },
+  { name: '加雞',            category: '單點',     price: 60,  emoji: '🍗', tag: '雞',   description: '燴飯加雞',                   image_url: '/uploads/menu/沙茶雞柳燴飯.webp' },
+  { name: '加飯',            category: '單點',     price: 10,  emoji: '🍚', tag: '其他', description: '加一份白飯',                 image_url: '/uploads/menu/單點 - 白飯.webp' },
 ]
 
-// recipe: [menu_name, ingredient_name, consume_qty]
-//   menu_name 用來查 item_id（避開 AUTOINCREMENT 順序問題）
 const RECIPES = [
-  // 便當
   ['大比目魚排便當',  '魚排',     1],
   ['大比目魚排便當',  '白米',     0.3],
   ['酥炸豬排便當',    '豬排',     1],
@@ -122,16 +99,12 @@ const RECIPES = [
   ['滷排骨便當',      '帶骨排骨', 1],
   ['滷排骨便當',      '滷蛋',     1],
   ['滷排骨便當',      '白米',     0.3],
-
-  // 燴飯
   ['沙茶牛肉燴飯', '牛肉',   0.2],
   ['沙茶牛肉燴飯', '白米',   0.3],
   ['沙茶雞柳燴飯', '沙茶雞', 0.15],
   ['沙茶雞柳燴飯', '白米',   0.3],
   ['沙茶豬肉燴飯', '豬肉',   0.2],
   ['沙茶豬肉燴飯', '白米',   0.3],
-
-  // 單點主餐（item_id 12-20）
   ['大比目魚排',  '魚排',     1],
   ['酥炸豬排',    '豬排',     1],
   ['酥嫩雞腿',    '酥嫩雞腿', 1],
@@ -141,8 +114,6 @@ const RECIPES = [
   ['沙茶燴豬肉',  '豬肉',     0.2],
   ['酥炸排骨',    '炸排骨',   1],
   ['滷雞腿',      '滷雞腿',   1],
-
-  // 單點配菜 / 加購（item_id 21-25）
   ['季節炒時蔬',  '高麗菜',   1],
   ['白飯',        '白米',     0.3],
   ['滷蛋',        '滷蛋',     1],
@@ -150,116 +121,84 @@ const RECIPES = [
   ['加購菜脯',    '菜脯',     1],
 ]
 
-// delivery_customer: { phone, name, address }
-const DELIVERY_CUSTOMERS = [
-  { phone: '0912-345-678', name: '王小明', address: '台北市大安區新生南路一段' },
-  { phone: '0933-456-789', name: '陳小美', address: '新北市板橋區中山路' },
-  { phone: '0944-567-890', name: '張小華', address: '台北市信義區基隆路' },
-]
-
-/**
- * 檢查 table 是否為空
- */
-function isEmpty(db, table) {
-  // table 已含 quote（如 "order"）或一般識別字
-  const row = db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get()
+async function isEmpty(conn, table) {
+  const [[row]] = await conn.execute(`SELECT COUNT(*) AS c FROM \`${table}\``)
   return row.c === 0
 }
 
-/**
- * 寫入所有 seed 資料（idempotent — 每張表獨立檢查）
- */
-function seedAll(db) {
+async function seedAll(conn) {
   const log = (msg) => console.log(`[seed] ${msg}`)
 
-  const tx = db.transaction(() => {
-    // 1) supplier
-    if (isEmpty(db, 'supplier')) {
-      const stmt = db.prepare('INSERT INTO supplier (name, phone) VALUES (?, ?)')
-      for (const s of SUPPLIERS) stmt.run(s.name, s.phone)
-      log(`supplier  : 寫入 ${SUPPLIERS.length} 筆`)
+  await conn.beginTransaction()
+  try {
+    // 1) 供應商
+    if (await isEmpty(conn, '供應商')) {
+      for (const s of SUPPLIERS) {
+        await conn.execute(
+          'INSERT INTO `供應商` (`供應商名稱`, `供應商電話`) VALUES (?, ?)',
+          [s.name, s.phone]
+        )
+      }
+      log(`供應商  : ${SUPPLIERS.length} rows`)
     } else {
-      log('supplier  : 已有資料，跳過')
+      log('供應商  : has data, skip')
     }
 
-    // 2) ingredient（依賴 supplier）
-    if (isEmpty(db, 'ingredient')) {
-      const stmt = db.prepare(`
-        INSERT INTO ingredient (name, stock_qty, safety_stock, stock_unit, order_unit, qty_per_order_unit, supplier_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `)
-      for (const ing of INGREDIENTS) stmt.run(...ing)
-      log(`ingredient: 寫入 ${INGREDIENTS.length} 筆`)
+    // 2) 食材
+    if (await isEmpty(conn, '食材')) {
+      for (const ing of INGREDIENTS) {
+        await conn.execute(
+          'INSERT INTO `食材` (`食材名稱`, `庫存數量`, `安全存量`, `庫存單位`, `供應商名稱`) VALUES (?, ?, ?, ?, ?)',
+          ing
+        )
+      }
+      log(`食材    : ${INGREDIENTS.length} rows`)
     } else {
-      log('ingredient: 已有資料，跳過')
+      log('食材    : has data, skip')
     }
 
-    // 3) menu_item
-    if (isEmpty(db, 'menu_item')) {
-      // 動態決定欄位（舊 DB 可能還沒跑對應 migrate）
-      const cols = db.prepare("PRAGMA table_info(menu_item)").all().map(c => c.name)
-      const hasImageUrl = cols.includes('image_url')
-      const hasAddons   = cols.includes('addons')
-      let sqlCols = 'name, category, price, emoji, tag, sub, option, description, is_active'
-      let sqlPlaceholders = '?, ?, ?, ?, ?, ?, ?, ?, ?'
-      if (hasImageUrl) { sqlCols += ', image_url'; sqlPlaceholders += ', ?' }
-      if (hasAddons)   { sqlCols += ', addons';    sqlPlaceholders += ', ?' }
-      const stmt = db.prepare(`INSERT INTO menu_item (${sqlCols}) VALUES (${sqlPlaceholders})`)
-
+    // 3) 餐點
+    if (await isEmpty(conn, '餐點')) {
       for (const m of MENU_ITEMS) {
         const active = m.is_active === undefined ? 1 : m.is_active
-        const args = [m.name, m.category, m.price, m.emoji, m.tag, m.sub, m.option, m.description, active]
-        if (hasImageUrl) args.push(m.image_url || '')
-        if (hasAddons)   args.push(JSON.stringify(m.addons ?? []))
-        stmt.run(...args)
+        await conn.execute(
+          'INSERT INTO `餐點` (`餐點名稱`, `餐點分類`, `餐點價格`, `圖示`, `分類標籤`, `餐點描述`, `上下架狀態`, `圖片網址`, `客製化屬性`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [m.name, m.category, m.price, m.emoji, m.tag, m.description, active, m.image_url || '', JSON.stringify(m.addons ?? [])]
+        )
       }
-      log(`menu_item : 寫入 ${MENU_ITEMS.length} 筆${hasImageUrl ? '（含 image_url）' : ''}${hasAddons ? '（含 addons）' : ''}`)
+      log(`餐點    : ${MENU_ITEMS.length} rows`)
     } else {
-      log('menu_item : 已有資料，跳過')
+      log('餐點    : has data, skip')
     }
 
-    // 4) recipe（依賴 menu_item + ingredient）
-    if (isEmpty(db, 'recipe')) {
-      // 透過 name 查回 item_id
-      const idByName = new Map()
-      const rows = db.prepare('SELECT item_id, name FROM menu_item').all()
-      for (const r of rows) idByName.set(r.name, r.item_id)
+    // 4) 食譜
+    if (await isEmpty(conn, '食譜')) {
+      const [menuRows] = await conn.execute('SELECT `餐點編號`, `餐點名稱` FROM `餐點`')
+      const idByName = new Map(menuRows.map(r => [r.餐點名稱, r.餐點編號]))
 
-      const stmt = db.prepare(`
-        INSERT INTO recipe (item_id, ingredient_name, consume_qty) VALUES (?, ?, ?)
-      `)
       let inserted = 0
       for (const [menuName, ingName, qty] of RECIPES) {
         const itemId = idByName.get(menuName)
         if (!itemId) {
-          console.warn(`[seed] ⚠️  找不到 menu_item: ${menuName}，略過此 recipe`)
+          console.warn(`[seed] 餐點 not found: ${menuName}, skipping recipe`)
           continue
         }
-        stmt.run(itemId, ingName, qty)
+        await conn.execute(
+          'INSERT INTO `食譜` (`餐點編號`, `食材名稱`, `食材數量`) VALUES (?, ?, ?)',
+          [itemId, ingName, qty]
+        )
         inserted++
       }
-      log(`recipe    : 寫入 ${inserted} 筆`)
+      log(`食譜    : ${inserted} rows`)
     } else {
-      log('recipe    : 已有資料，跳過')
+      log('食譜    : has data, skip')
     }
 
-    // 5) delivery_customer（無依賴）
-    if (isEmpty(db, 'delivery_customer')) {
-      const stmt = db.prepare(`
-        INSERT INTO delivery_customer (phone, name, address) VALUES (?, ?, ?)
-      `)
-      for (const c of DELIVERY_CUSTOMERS) stmt.run(c.phone, c.name, c.address)
-      log(`delivery_customer: 寫入 ${DELIVERY_CUSTOMERS.length} 筆`)
-    } else {
-      log('delivery_customer: 已有資料，跳過')
-    }
-
-    // 注意：訂單 / 進貨單範例資料故意不 seed
-    //   - 新環境不需要假訂單（會干擾真實資料）
-    //   - 若要本機示範資料，請另外手動插入
-  })
-
-  tx()
+    await conn.commit()
+  } catch (err) {
+    await conn.rollback()
+    throw err
+  }
 }
 
 module.exports = {
@@ -268,5 +207,4 @@ module.exports = {
   INGREDIENTS,
   MENU_ITEMS,
   RECIPES,
-  DELIVERY_CUSTOMERS,
 }

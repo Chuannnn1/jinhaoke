@@ -2,52 +2,43 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface MenuItem {
-  item_id: number
-  name: string
-  category: string
-  price: number
-  emoji: string
-  tag: string
-  sub: string
-  option: string
-  description: string
-  is_active: number
-  image_url: string
+  餐點編號: number
+  餐點名稱: string
+  餐點分類: string
+  餐點價格: number
+  圖示: string
+  分類標籤: string
+  餐點描述: string
+  上下架狀態: number
+  圖片網址: string
 }
 
 type FormData = {
-  name: string
-  category: string
-  price: number
-  emoji: string
-  tag: string
-  sub: string
-  option: string
-  description: string
-  image_url: string
+  餐點名稱: string
+  餐點分類: string
+  餐點價格: number
+  圖示: string
+  分類標籤: string
+  餐點描述: string
+  圖片網址: string
 }
 
-// 預設分類（即使 DB 還沒任何 item 也會顯示）
 const DEFAULT_MENU_CATEGORIES = ['手作便當', '燴飯', '單點']
-// 舊資料（後台手動誤加）會有「便當」，UI 上一律歸到「手作便當」
 const LEGACY_CATEGORY_MAP: Record<string, string> = {
   '便當': '手作便當',
 }
 const normalizeCategory = (c: string) => LEGACY_CATEGORY_MAP[c] ?? c
 
-// 特殊膠囊：選中時只顯示已下架品項（不受 category 限制）
 const PILL_INACTIVE = '已下架'
 
 const EMPTY_FORM: FormData = {
-  name: '',
-  category: '手作便當',
-  price: 0,
-  emoji: '',
-  tag: '',
-  sub: '',
-  option: '',
-  description: '',
-  image_url: '',
+  餐點名稱: '',
+  餐點分類: '手作便當',
+  餐點價格: 0,
+  圖示: '',
+  分類標籤: '',
+  餐點描述: '',
+  圖片網址: '',
 }
 
 export default function MenuPage() {
@@ -69,7 +60,6 @@ export default function MenuPage() {
   const fetchMenu = useCallback(async () => {
     setLoading(true)
     try {
-      // 一律抓全部（含已下架）；前端用「已下架」膠囊切換顯示
       const res = await fetch('/api/menu?include_inactive=1')
       const data = await res.json()
       if (data.success) setItems(data.data)
@@ -84,48 +74,41 @@ export default function MenuPage() {
   useEffect(() => { fetchMenu() }, [fetchMenu])
 
   const filtered = items.filter(item => {
-    const matchSearch = search === '' || item.name.includes(search)
+    const matchSearch = search === '' || item.餐點名稱.includes(search)
     if (!matchSearch) return false
 
-    // 「已下架」膠囊：只顯示 is_active = 0，不再受 category 限制
-    if (activeCategory === PILL_INACTIVE) return item.is_active !== 1
+    if (activeCategory === PILL_INACTIVE) return item.上下架狀態 !== 1
 
-    // 其餘膠囊只看上架中
-    if (item.is_active !== 1) return false
+    if (item.上下架狀態 !== 1) return false
     return (
       activeCategory === '全部' ||
-      item.category === activeCategory ||
-      normalizeCategory(item.category) === activeCategory
+      item.餐點分類 === activeCategory ||
+      normalizeCategory(item.餐點分類) === activeCategory
     )
   })
 
-  const totalItems = items.filter(i => i.is_active === 1).length
-  const inactiveCount = items.filter(i => i.is_active !== 1).length
+  const totalItems = items.filter(i => i.上下架狀態 === 1).length
+  const inactiveCount = items.filter(i => i.上下架狀態 !== 1).length
   const categoryCount = new Set(
-    items.filter(i => i.is_active === 1).map(i => normalizeCategory(i.category))
+    items.filter(i => i.上下架狀態 === 1).map(i => normalizeCategory(i.餐點分類))
   ).size
 
-  // 動態組合 filter chip：預設 + 實際 DB 出現的分類（先 normalize 去掉舊「便當」）
-  // 已下架的品項分類不會擠進這份清單（避免出現只剩已下架的舊分類）
   const dynamicCategorySet = new Set<string>(DEFAULT_MENU_CATEGORIES)
   for (const i of items) {
-    if (!i.category || i.is_active !== 1) continue
-    dynamicCategorySet.add(normalizeCategory(i.category))
+    if (!i.餐點分類 || i.上下架狀態 !== 1) continue
+    dynamicCategorySet.add(normalizeCategory(i.餐點分類))
   }
   const CATEGORIES = ['全部', ...Array.from(dynamicCategorySet)]
-  // 新增/編輯 form 的下拉選項（不含「全部」，也不含舊「便當」）
   const MENU_CATEGORIES = Array.from(dynamicCategorySet)
 
-  // 把篩出來的品項依分類分組，渲染時做 section 標題
   const groupedByCategory: Array<{ category: string; items: MenuItem[] }> = (() => {
     const order = Array.from(dynamicCategorySet)
     const map = new Map<string, MenuItem[]>()
     for (const it of filtered) {
-      const cat = normalizeCategory(it.category) || '其他'
+      const cat = normalizeCategory(it.餐點分類) || '其他'
       if (!map.has(cat)) map.set(cat, [])
       map.get(cat)!.push(it)
     }
-    // 先照 DEFAULT_MENU_CATEGORIES 的順序排，剩下的補後面
     const seen = new Set<string>()
     const out: Array<{ category: string; items: MenuItem[] }> = []
     for (const cat of order) {
@@ -157,16 +140,13 @@ export default function MenuPage() {
   const openEdit = (item: MenuItem) => {
     setEditTarget(item)
     setForm({
-      name: item.name,
-      // 編輯時把舊「便當」正規化為「手作便當」，存檔時順手 migrate
-      category: normalizeCategory(item.category),
-      price: item.price,
-      emoji: item.emoji,
-      tag: item.tag,
-      sub: item.sub,
-      option: item.option,
-      description: item.description,
-      image_url: item.image_url || '',
+      餐點名稱: item.餐點名稱,
+      餐點分類: normalizeCategory(item.餐點分類),
+      餐點價格: item.餐點價格,
+      圖示: item.圖示,
+      分類標籤: item.分類標籤,
+      餐點描述: item.餐點描述 || '',
+      圖片網址: item.圖片網址 || '',
     })
     setFormError(null)
     resetFileState()
@@ -221,19 +201,19 @@ export default function MenuPage() {
   }
 
   const handleSubmit = async () => {
-    if (!form.name.trim() || !form.category || form.price <= 0) {
+    if (!form.餐點名稱.trim() || !form.餐點分類 || form.餐點價格 <= 0) {
       setFormError('品名、分類、價格為必填，價格需大於 0')
       return
     }
     setSubmitting(true)
     setFormError(null)
     try {
-      const url = editTarget ? `/api/menu/${editTarget.item_id}` : '/api/menu'
+      const url = editTarget ? `/api/menu/${editTarget.餐點編號}` : '/api/menu'
       const method = editTarget ? 'PUT' : 'POST'
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, is_active: editTarget ? editTarget.is_active : 1 }),
+        body: JSON.stringify({ ...form, 上下架狀態: editTarget ? editTarget.上下架狀態 : 1 }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -242,7 +222,7 @@ export default function MenuPage() {
         return
       }
 
-      const targetId = editTarget ? editTarget.item_id : data.data?.item_id
+      const targetId = editTarget ? editTarget.餐點編號 : data.data?.餐點編號
       if (pendingFile && targetId) {
         const ok = await uploadImage(targetId, pendingFile)
         if (!ok) {
@@ -262,9 +242,9 @@ export default function MenuPage() {
   }
 
   const handleDelete = async (item: MenuItem) => {
-    if (!window.confirm(`確定要下架「${item.name}」？`)) return
+    if (!window.confirm(`確定要下架「${item.餐點名稱}」？`)) return
     try {
-      const res = await fetch(`/api/menu/${item.item_id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/menu/${item.餐點編號}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.success) fetchMenu()
     } catch {
@@ -274,10 +254,10 @@ export default function MenuPage() {
 
   const handleReactivate = async (item: MenuItem) => {
     try {
-      const res = await fetch(`/api/menu/${item.item_id}`, {
+      const res = await fetch(`/api/menu/${item.餐點編號}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: 1 }),
+        body: JSON.stringify({ 上下架狀態: 1 }),
       })
       const data = await res.json()
       if (data.success) fetchMenu()
@@ -344,7 +324,6 @@ export default function MenuPage() {
                     {cat}
                   </button>
                 ))}
-                {/* 已下架特殊膠囊：點下去只看下架的品項 */}
                 <button
                   onClick={() => setActiveCategory(PILL_INACTIVE)}
                   className={`px-3 py-1.5 rounded-full text-sm transition-colors inline-flex items-center gap-1.5 ${
@@ -374,7 +353,7 @@ export default function MenuPage() {
               </button>
             </div>
 
-            {/* 分組品項列表（每個 category 一段 + 全寬橫線分隔） */}
+            {/* Item list grouped by category */}
             {filtered.length === 0 ? (
               <div className="bg-white rounded-xl shadow-sm text-center py-12 text-ink/30">
                 {items.length === 0 ? '尚無品項' : '沒有符合的品項'}
@@ -383,7 +362,6 @@ export default function MenuPage() {
               <div className="space-y-6">
                 {groupedByCategory.map(group => (
                   <section key={group.category} className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    {/* Section header — 全寬橫線到底 */}
                     <div className="flex items-center px-5 py-3 bg-clay-soft/40 border-b-2 border-clay/40">
                       <span className="text-sm font-semibold text-clay tracking-wide whitespace-nowrap">
                         {group.category}
@@ -401,13 +379,13 @@ export default function MenuPage() {
                           <th className="px-4 py-2 font-medium">品名</th>
                           <th className="px-4 py-2 font-medium">標籤</th>
                           <th className="px-4 py-2 font-medium text-right">價格</th>
-                          <th className="px-4 py-2 font-medium">副標 / 選項</th>
+                          <th className="px-4 py-2 font-medium">描述</th>
                           <th className="px-4 py-2 font-medium text-right">操作</th>
                         </tr>
                       </thead>
                       <tbody>
                         {group.items.map((item, idx) => {
-                          const inactive = item.is_active !== 1
+                          const inactive = item.上下架狀態 !== 1
                           const baseRow = inactive
                             ? 'opacity-60 bg-gray-100/60'
                             : idx % 2 === 0
@@ -415,15 +393,15 @@ export default function MenuPage() {
                               : 'bg-gray-50/20'
                           return (
                             <tr
-                              key={item.item_id}
+                              key={item.餐點編號}
                               className={`border-t border-gray-200 hover:bg-gray-50/50 transition-colors ${baseRow}`}
                             >
                               <td className="px-4 py-3 text-center">
-                                {item.image_url ? (
+                                {item.圖片網址 ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
-                                    src={item.image_url}
-                                    alt={item.name}
+                                    src={item.圖片網址}
+                                    alt={item.餐點名稱}
                                     className="w-10 h-10 rounded-md object-cover inline-block"
                                   />
                                 ) : (
@@ -433,24 +411,19 @@ export default function MenuPage() {
                                 )}
                               </td>
                               <td className="px-4 py-3">
-                                <span className="font-medium text-ink">{item.name}</span>
+                                <span className="font-medium text-ink">{item.餐點名稱}</span>
                                 {inactive && (
                                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 align-middle">
                                     已下架
                                   </span>
                                 )}
-                                {item.description && (
-                                  <p className="text-xs text-ink/40 mt-0.5 truncate max-w-[180px]">
-                                    {item.description}
-                                  </p>
-                                )}
                               </td>
-                              <td className="px-4 py-3 text-ink/50 text-xs">{item.tag || '—'}</td>
+                              <td className="px-4 py-3 text-ink/50 text-xs">{item.分類標籤 || '—'}</td>
                               <td className="px-4 py-3 text-right font-mono font-semibold text-ink">
-                                ${item.price}
+                                ${item.餐點價格}
                               </td>
                               <td className="px-4 py-3 text-xs text-ink/50">
-                                {[item.sub, item.option].filter(Boolean).join(' · ') || '—'}
+                                {item.餐點描述 || '—'}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex justify-end gap-2" style={{ opacity: 1 }}>
@@ -496,7 +469,7 @@ export default function MenuPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
               <h3 className="font-semibold text-ink text-base">
-                {editTarget ? `編輯「${editTarget.name}」` : '新增品項'}
+                {editTarget ? `編輯「${editTarget.餐點名稱}」` : '新增品項'}
               </h3>
               <button
                 onClick={closeModal}
@@ -506,7 +479,6 @@ export default function MenuPage() {
               </button>
             </div>
 
-            {/* 包成 form：所有單行 input 按 Enter 即可送出儲存；textarea 保持換行行為 */}
             <form
               onSubmit={e => {
                 e.preventDefault()
@@ -522,9 +494,9 @@ export default function MenuPage() {
                     {pendingPreview ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={pendingPreview} alt="預覽" className="w-full h-full object-cover" />
-                    ) : form.image_url ? (
+                    ) : form.圖片網址 ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={form.image_url} alt="目前圖片" className="w-full h-full object-cover" />
+                      <img src={form.圖片網址} alt="目前圖片" className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-[11px] text-ink/40 text-center px-2">尚未上傳</span>
                     )}
@@ -549,8 +521,8 @@ export default function MenuPage() {
                 </label>
                 <input
                   type="text"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  value={form.餐點名稱}
+                  onChange={e => setForm(f => ({ ...f, 餐點名稱: e.target.value }))}
                   placeholder="酥炸豬排便當"
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
@@ -563,8 +535,8 @@ export default function MenuPage() {
                     分類 <span className="text-red-400">*</span>
                   </label>
                   <select
-                    value={form.category}
-                    onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                    value={form.餐點分類}
+                    onChange={e => setForm(f => ({ ...f, 餐點分類: e.target.value }))}
                     className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-clay"
                   >
                     {MENU_CATEGORIES.map(c => (
@@ -578,8 +550,8 @@ export default function MenuPage() {
                   </label>
                   <input
                     type="number"
-                    value={form.price}
-                    onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
+                    value={form.餐點價格}
+                    onChange={e => setForm(f => ({ ...f, 餐點價格: Number(e.target.value) }))}
                     min={1}
                     className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-clay"
                   />
@@ -591,43 +563,19 @@ export default function MenuPage() {
                 <label className="text-xs text-ink/50 mb-1 block">標籤</label>
                 <input
                   type="text"
-                  value={form.tag}
-                  onChange={e => setForm(f => ({ ...f, tag: e.target.value }))}
+                  value={form.分類標籤}
+                  onChange={e => setForm(f => ({ ...f, 分類標籤: e.target.value }))}
                   placeholder="豬、雞、魚…"
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
                 />
               </div>
 
-              {/* sub + option */}
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="text-xs text-ink/50 mb-1 block">副標題</label>
-                  <input
-                    type="text"
-                    value={form.sub}
-                    onChange={e => setForm(f => ({ ...f, sub: e.target.value }))}
-                    placeholder="扁鱈"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-ink/50 mb-1 block">選項</label>
-                  <input
-                    type="text"
-                    value={form.option}
-                    onChange={e => setForm(f => ({ ...f, option: e.target.value }))}
-                    placeholder="加辣+10"
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-clay"
-                  />
-                </div>
-              </div>
-
               {/* description */}
               <div>
-                <label className="text-xs text-ink/50 mb-1 block">描述</label>
+                <label className="text-xs text-ink/50 mb-1 block">餐點描述</label>
                 <textarea
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  value={form.餐點描述}
+                  onChange={e => setForm(f => ({ ...f, 餐點描述: e.target.value }))}
                   rows={2}
                   placeholder="簡短說明…"
                   className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-clay"
