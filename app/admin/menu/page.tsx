@@ -392,11 +392,11 @@ export default function MenuPage() {
                     <table className="w-full text-sm table-fixed">
                       <colgroup>
                         <col className="w-16" />
-                        <col className="w-[28%]" />
-                        <col className="w-[12%]" />
+                        <col className="w-[24%]" />
                         <col className="w-[10%]" />
+                        <col className="w-[8%]" />
                         <col />
-                        <col className="w-[14%]" />
+                        <col className="w-[22%]" />
                       </colgroup>
                       <thead>
                         <tr className="bg-gray-50/60 text-ink/50 text-left text-xs uppercase tracking-wide">
@@ -412,7 +412,7 @@ export default function MenuPage() {
                         {group.items.map((item, idx) => {
                           const inactive = item.上下架狀態 !== 1
                           const baseRow = inactive
-                            ? 'opacity-60 bg-gray-100/60'
+                            ? 'bg-gray-100/60'
                             : idx % 2 === 0
                               ? 'bg-white'
                               : 'bg-gray-50/20'
@@ -421,7 +421,7 @@ export default function MenuPage() {
                               key={item.餐點編號}
                               className={`border-t border-gray-200 hover:bg-gray-50/50 transition-colors ${baseRow}`}
                             >
-                              <td className="px-4 py-3 text-center">
+                              <td className={`px-4 py-3 text-center ${inactive ? 'opacity-50' : ''}`}>
                                 {item.圖片網址 ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
@@ -435,26 +435,26 @@ export default function MenuPage() {
                                   </div>
                                 )}
                               </td>
-                              <td className="px-4 py-3 truncate">
+                              <td className={`px-4 py-3 truncate ${inactive ? 'opacity-50' : ''}`}>
                                 <span className="font-medium text-ink">{item.餐點名稱}</span>
                                 {inactive && (
-                                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 align-middle">
+                                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 align-middle opacity-100">
                                     已下架
                                   </span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-ink/50 text-xs truncate">{item.分類標籤 || '—'}</td>
-                              <td className="px-4 py-3 text-right font-mono font-semibold text-ink">
+                              <td className={`px-4 py-3 text-ink/50 text-xs truncate ${inactive ? 'opacity-50' : ''}`}>{item.分類標籤 || '—'}</td>
+                              <td className={`px-4 py-3 text-right font-mono font-semibold text-ink ${inactive ? 'opacity-50' : ''}`}>
                                 ${item.餐點價格}
                               </td>
-                              <td className="px-4 py-3 text-xs text-ink/50 truncate">
+                              <td className={`px-4 py-3 text-xs text-ink/50 truncate ${inactive ? 'opacity-50' : ''}`}>
                                 {item.餐點描述 || '—'}
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <div className="flex justify-end gap-2" style={{ opacity: 1 }}>
+                                <div className="flex justify-end gap-2 flex-nowrap">
                                   <button
                                     onClick={() => openEdit(item)}
-                                    className="px-3 py-1 text-xs rounded-md bg-clay-soft text-clay-deep border border-clay-deep/30 hover:bg-clay-deep hover:text-white transition-colors font-medium"
+                                    className="px-3 py-1 text-xs rounded-md bg-clay-soft text-clay-deep border border-clay-deep/30 hover:bg-clay-deep hover:text-white transition-colors font-medium whitespace-nowrap"
                                   >
                                     編輯
                                   </button>
@@ -462,13 +462,13 @@ export default function MenuPage() {
                                     <>
                                       <button
                                         onClick={() => handleReactivate(item)}
-                                        className="px-3 py-1 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+                                        className="px-3 py-1 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium whitespace-nowrap"
                                       >
-                                        重新上架
+                                        上架
                                       </button>
                                       <button
                                         onClick={() => handlePermanentDelete(item)}
-                                        className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium"
+                                        className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium whitespace-nowrap"
                                       >
                                         刪除
                                       </button>
@@ -476,7 +476,7 @@ export default function MenuPage() {
                                   ) : (
                                     <button
                                       onClick={() => handleDelete(item)}
-                                      className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium"
+                                      className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-600 hover:text-white transition-colors font-medium whitespace-nowrap"
                                     >
                                       下架
                                     </button>
