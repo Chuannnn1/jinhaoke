@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { computeAvailability } from '@/lib/availability'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const rows = await computeAvailability()

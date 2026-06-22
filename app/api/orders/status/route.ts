@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db'
 import { computeOrderConsumption, type OrderItemInput } from '@/lib/order-consumption'
 import type { RowDataPacket } from 'mysql2/promise'
 
+export const dynamic = 'force-dynamic'
+
 const statusMap: Record<string, string> = {
   pending:          '待製作',
   preparing:        '製作中',
