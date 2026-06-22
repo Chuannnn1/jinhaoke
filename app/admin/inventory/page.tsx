@@ -148,10 +148,7 @@ function InventoryTab() {
     fetchSuppliers()
   }, [fetchInventory, fetchSuppliers])
 
-  // 第一次進來自動掃低庫存（每個 session 只跳一次）
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (window.sessionStorage.getItem('lowStockAlertShown') === '1') return
     let cancelled = false
     setLowLoading(true)
     fetch('/api/inventory/low-stock')
@@ -162,7 +159,6 @@ function InventoryTab() {
           setLowItems(data.data)
           setLowAlertOpen(true)
         }
-        window.sessionStorage.setItem('lowStockAlertShown', '1')
       })
       .catch(() => { /* silent */ })
       .finally(() => { if (!cancelled) setLowLoading(false) })
