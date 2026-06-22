@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
+export const dynamic = 'force-dynamic'
+
 interface PORow extends RowDataPacket {
   採購單編號: number
   採購單日期: string

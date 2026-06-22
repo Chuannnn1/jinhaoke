@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 
+export const dynamic = 'force-dynamic'
+
 interface MonthlyReport {
   year: number
   month: number
