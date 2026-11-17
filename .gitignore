@@ -1,11 +1,9 @@
 node_modules/
 .next/
-.env.local
-.env.*.local
-data/*.db
-data/*.db-shm
-data/*.db-wal
+.env*
+data/*.db*
+data/*.sqlite*
+data/sample-orders/
+*.log
 tsconfig.tsbuildinfo
 public/uploads/data/*.db.*
-data/*.db-shm.*
-data/*.db-wal.*
